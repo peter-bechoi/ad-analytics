@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Sidebar from './components/layout/Sidebar'
 import UploadZone from './components/UploadZone'
 import DashboardPage from './pages/DashboardPage'
 import InsightsPage from './pages/InsightsPage'
 import ReportPage from './pages/ReportPage'
 import LoginPage from './pages/LoginPage'
-import { uploadFile } from './api/client'
+import { uploadFile, pingHealth } from './api/client'
+
+const PING_INTERVAL_MS = 5 * 60 * 1000 // 5분
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(() => sessionStorage.getItem('auth') === '1')
@@ -14,6 +16,12 @@ export default function App() {
   const [uploadData, setUploadData] = useState(null)
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState(null)
+
+  useEffect(() => {
+    pingHealth()
+    const id = setInterval(pingHealth, PING_INTERVAL_MS)
+    return () => clearInterval(id)
+  }, [])
 
   const handleLogin = () => {
     sessionStorage.setItem('auth', '1')
