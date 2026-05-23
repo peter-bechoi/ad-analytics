@@ -476,9 +476,42 @@ function BrandAdsBox({ categoryRevenue, totalSpend }) {
 const BC_COLORS = { brand: '#7C3AED', category: '#2563EB', other: '#94A3B8' }
 const BC_LABELS = { brand: '자사 키워드', category: '카테고리 키워드', other: '기타' }
 
-function BrandCategoryDonut({ keywords }) {
-  const [metric,  setMetric]  = useState('revenue')
-  const [showTip, setShowTip] = useState(false)
+function BrandCategoryDonut({ keywords, brandTags, onAddTag, onRemoveTag }) {
+  const [metric,   setMetric]   = useState('revenue')
+  const [showTip,  setShowTip]  = useState(false)
+  const [editing,  setEditing]  = useState(false)
+  const [inputVal, setInputVal] = useState('')
+  const inputRef = useRef(null)
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus()
+  }, [editing])
+
+  const commitInput = () => {
+    const val = inputVal.trim().replace(/,+$/, '').trim()
+    if (val) onAddTag(val)
+    setInputVal('')
+  }
+
+  const handleKeyDown = e => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      commitInput()
+    } else if (e.key === 'Backspace' && inputVal === '' && brandTags.length > 0) {
+      onRemoveTag(brandTags[brandTags.length - 1])
+    }
+  }
+
+  const handleChange = e => {
+    const v = e.target.value
+    if (v.includes(',')) {
+      const parts = v.split(',')
+      parts.slice(0, -1).forEach(p => { const t = p.trim(); if (t) onAddTag(t) })
+      setInputVal(parts[parts.length - 1])
+    } else {
+      setInputVal(v)
+    }
+  }
 
   const groups = useMemo(() => {
     const acc = {
@@ -516,10 +549,19 @@ function BrandCategoryDonut({ keywords }) {
           </button>
           {showTip && (
             <div className="absolute left-0 top-5 z-20 bg-slate-800 text-white text-xs rounded-lg p-3 w-64 leading-relaxed shadow-xl whitespace-normal">
-              상품명에 포함된 단어가 키워드에 있으면 자사 키워드, 그 외는 카테고리/일반 키워드로 분류합니다. 자동 분류이므로 참고치로만 활용 부탁드립니다.
+              브랜드명을 직접 입력하면 자사/카테고리 키워드를 정확하게 분류합니다. 브랜드명 미입력 시 상품명 토큰으로 자동 분류합니다. (참고치)
             </div>
           )}
         </div>
+        <button
+          onClick={() => setEditing(v => !v)}
+          title="브랜드명 편집"
+          className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${editing ? 'bg-violet-100 text-violet-600' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'}`}
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
+          </svg>
+        </button>
         <select
           value={metric}
           onChange={e => setMetric(e.target.value)}
@@ -529,7 +571,40 @@ function BrandCategoryDonut({ keywords }) {
           <option value="spend">광고비 기준</option>
         </select>
       </div>
-      <p className="text-xs text-slate-400 mb-4">상품명 토큰 기반 자동 분류</p>
+
+      {editing && (
+        <div className="mb-3 p-3 bg-violet-50 rounded-lg border border-violet-200">
+          <p className="text-[11px] text-violet-600 font-medium mb-2">브랜드명 입력 (Enter 또는 쉼표로 추가)</p>
+          <div
+            className="flex flex-wrap gap-1.5 p-2 bg-white rounded-md border border-violet-200 min-h-[36px] cursor-text"
+            onClick={() => inputRef.current?.focus()}
+          >
+            {brandTags.map((tag, i) => (
+              <span key={i} className="inline-flex items-center gap-1 bg-violet-100 text-violet-700 text-xs font-medium px-2 py-0.5 rounded-full">
+                {tag}
+                <button
+                  onClick={e => { e.stopPropagation(); onRemoveTag(tag) }}
+                  className="hover:text-violet-900 text-violet-500 leading-none"
+                >&times;</button>
+              </span>
+            ))}
+            <input
+              ref={inputRef}
+              value={inputVal}
+              onChange={handleChange}
+              onKeyDown={handleKeyDown}
+              onBlur={commitInput}
+              placeholder={brandTags.length === 0 ? '예: 메이제이, 알레' : ''}
+              className="flex-1 min-w-[80px] text-xs outline-none bg-transparent text-slate-700 placeholder-slate-300"
+            />
+          </div>
+        </div>
+      )}
+
+      <p className="text-xs text-slate-400 mb-4">
+        {brandTags.length > 0 ? `브랜드명 ${brandTags.length}개 기준 분류` : '상품명 토큰 기반 자동 분류'}
+      </p>
+
       {groups.length > 0 ? (
         <div className="flex flex-wrap items-center gap-4">
           <div className="w-40 h-40 shrink-0">
@@ -578,8 +653,31 @@ function BrandCategoryDonut({ keywords }) {
 
 // ─── 키워드 섹션 ─────────────────────────────────────────────────────────────
 
+const LS_BRAND_KEY = 'ad_analytics_brand_tags'
+
 function KeywordSection({ keywords, isAll, data }) {
   const displayKeywords = isAll ? keywords.slice(0, 100) : keywords
+
+  const [brandTags, setBrandTags] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(LS_BRAND_KEY)) ?? [] } catch { return [] }
+  })
+
+  const addBrandTag = useCallback(tag => {
+    setBrandTags(prev => {
+      if (prev.includes(tag)) return prev
+      const next = [...prev, tag]
+      localStorage.setItem(LS_BRAND_KEY, JSON.stringify(next))
+      return next
+    })
+  }, [])
+
+  const removeBrandTag = useCallback(tag => {
+    setBrandTags(prev => {
+      const next = prev.filter(t => t !== tag)
+      localStorage.setItem(LS_BRAND_KEY, JSON.stringify(next))
+      return next
+    })
+  }, [])
 
   const donutData = useMemo(() => {
     const top10 = [...displayKeywords]
@@ -596,8 +694,8 @@ function KeywordSection({ keywords, isAll, data }) {
     const productTokens = extractProductTokens(data)
     return displayKeywords
       .filter(k => k.키워드 !== '비검색')
-      .map(k => ({ ...k, 분류: classifyKeyword(k.키워드, productTokens) }))
-  }, [displayKeywords, data])
+      .map(k => ({ ...k, 분류: classifyKeyword(k.키워드, productTokens, brandTags) }))
+  }, [displayKeywords, data, brandTags])
 
   const realKws  = useMemo(() => displayKeywords.filter(k => k.키워드 !== '비검색' && k.광고비 > 0), [displayKeywords])
   const avgSpend = realKws.length ? realKws.reduce((s, k) => s + k.광고비, 0) / realKws.length : 0
@@ -664,7 +762,12 @@ function KeywordSection({ keywords, isAll, data }) {
             </div>
           </div>
         )}
-        <BrandCategoryDonut keywords={classified} />
+        <BrandCategoryDonut
+          keywords={classified}
+          brandTags={brandTags}
+          onAddTag={addBrandTag}
+          onRemoveTag={removeBrandTag}
+        />
       </div>
 
       {/* 고효율 / 저효율 테이블 */}

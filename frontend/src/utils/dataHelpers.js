@@ -337,9 +337,12 @@ export function extractProductTokens(data) {
   return tokens
 }
 
-export function classifyKeyword(keyword, productTokens) {
+export function classifyKeyword(keyword, productTokens, brandNames = []) {
   if (!keyword || keyword === '비검색') return 'other'
   const lower = keyword.toLowerCase()
+  if (brandNames.length > 0) {
+    return brandNames.some(b => b && lower.includes(b.toLowerCase().trim())) ? 'brand' : 'category'
+  }
   for (const token of productTokens) {
     if (lower.includes(token)) return 'brand'
   }
