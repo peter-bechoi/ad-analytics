@@ -329,14 +329,31 @@ export default function DashboardPage({ data, dateRange }) {
     { key: 'CVR',       label: 'CVR',     render: v => fmtPercent(v, 2) },
   ]
 
+  const avgCTR = campaigns.length ? campaigns.reduce((s, c) => s + (c.CTR ?? 0), 0) / campaigns.length : 0
+  const avgCVR = campaigns.length ? campaigns.reduce((s, c) => s + (c.CVR ?? 0), 0) / campaigns.length : 0
+
   const campaignCols = [
     { key: '캠페인명',  label: '캠페인명', className: 'font-medium text-slate-800 max-w-[160px] truncate' },
     { key: '광고비',    label: '광고비',   render: v => fmtWon(v) },
     { key: '매출_14일', label: '전환매출', render: v => fmtWon(v), defaultSort: true },
     { key: 'ROAS_14일', label: 'ROAS',    render: v => ROAS_CHIP(v) },
     { key: '클릭수',    label: '클릭수',   render: v => fmtNumber(v) },
-    { key: 'CTR',       label: 'CTR',     render: v => fmtPercent(v, 2) },
-    { key: 'CVR',       label: 'CVR',     render: v => fmtPercent(v, 2) },
+    { key: 'CTR',       label: 'CTR',     render: v => (
+      <span className="flex items-center gap-1 justify-end">
+        {fmtPercent(v, 2)}
+        {avgCTR > 0 && v < avgCTR * 0.5 && (
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">개선 필요</span>
+        )}
+      </span>
+    )},
+    { key: 'CVR',       label: 'CVR',     render: v => (
+      <span className="flex items-center gap-1 justify-end">
+        {fmtPercent(v, 2)}
+        {avgCVR > 0 && v < avgCVR * 0.5 && (
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">개선 필요</span>
+        )}
+      </span>
+    )},
   ]
 
   return (

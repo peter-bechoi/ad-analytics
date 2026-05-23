@@ -15,6 +15,7 @@ CANONICAL_COLUMNS: dict[str, list[str]] = {
     "캠페인명":           ["캠페인명", "캠페인", "campaign", "campaign_name", "캠페인 명"],
     "광고그룹":           ["광고그룹", "광고그룹명", "adgroup", "ad_group", "광고 그룹"],
     "광고집행 상품명":    ["광고집행 상품명", "광고 집행 상품명", "상품명", "광고상품명", "집행상품", "product"],
+    "광고집행 옵션ID":    ["광고집행 옵션ID", "광고 집행 옵션ID", "광고집행옵션id", "옵션ID", "option_id", "옵션id"],
     "키워드":             ["키워드", "keyword", "검색어", "검색 키워드", "kw"],
     "노출수":             ["노출수", "노출", "impression", "impressions", "imp"],
     "클릭수":             ["클릭수", "클릭", "click", "clicks"],
@@ -226,6 +227,17 @@ def group_by_product(
         return {"items": [], "total": 0, "page": page, "total_pages": 0,
                 "debug_columns": list(df.columns)}
 
+    # 옵션ID 맵 미리 수집 (product_col 기준)
+    opt_id_map: dict = {}
+    if "광고집행 옵션ID" in df.columns:
+        for prod_val, grp_df in df.groupby(product_col, dropna=False):
+            ids = sorted(set(
+                str(v).strip()
+                for v in grp_df["광고집행 옵션ID"].dropna()
+                if str(v).strip() not in ("", "nan")
+            ))
+            opt_id_map[prod_val] = ", ".join(ids)
+
     agg_map = {
         c: "sum"
         for c in ["광고비", "총 전환매출액(1일)", "총 전환매출액(14일)",
@@ -244,6 +256,10 @@ def group_by_product(
             "총 주문수(14일)":      "주문수_14일",
         })
     )
+
+    # 옵션ID 컬럼 부착
+    if opt_id_map:
+        grp["옵션ID"] = grp["상품명"].map(opt_id_map).fillna("")
 
     def safe_roas(row, rev_col):
         cost = row.get("광고비", 0) or 0

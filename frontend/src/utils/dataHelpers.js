@@ -251,6 +251,50 @@ export function generateInsights(data) {
     })
   }
 
+  // ── 스마트 캠페인 예산 증액 ──────────────────────────────────────────────────
+  const smartHighRoas = campaigns.filter(c => c.캠페인명.includes('스마트') && c.ROAS_14일 > 300)
+  if (smartHighRoas.length) {
+    const top = [...smartHighRoas].sort((a, b) => b.ROAS_14일 - a.ROAS_14일)[0]
+    insights.push({
+      type: 'expand', title: '스마트캠페인 예산 증액 추천', badge: '스마트 고효율',
+      body: `'${top.캠페인명}' 스마트 캠페인 ROAS ${top.ROAS_14일.toLocaleString()}%로 고효율 구간입니다. 광고비 ${Math.round(top.광고비).toLocaleString()}원 집행 중.`,
+      action: '일 예산 1.5배 이상 증액으로 노출 확대 검토',
+    })
+  }
+
+  // ── 비검색 ROAS > 검색 평균 ROAS → 비검색 입찰가 상향 ────────────────────
+  const searchKws = keywords.filter(k => k.키워드 !== '비검색' && k.광고비 > 0)
+  const avgSearchRoas = searchKws.length
+    ? Math.round(searchKws.reduce((s, k) => s + k.ROAS_14일, 0) / searchKws.length)
+    : 0
+  const nsKwCompare = keywords.find(k => k.키워드 === '비검색')
+  if (nsKwCompare && nsKwCompare.ROAS_14일 > 0 && avgSearchRoas > 0 && nsKwCompare.ROAS_14일 > avgSearchRoas) {
+    insights.push({
+      type: 'expand', title: '비검색 입찰가 상향 검토', badge: '비검색 우수',
+      body: `비검색 ROAS ${nsKwCompare.ROAS_14일.toLocaleString()}%가 검색 키워드 평균 ROAS ${avgSearchRoas.toLocaleString()}%보다 ${(nsKwCompare.ROAS_14일 - avgSearchRoas).toLocaleString()}%p 높습니다.`,
+      action: '비검색 지면 입찰가 상향으로 논서치 노출 점유율 확대 검토',
+    })
+  }
+
+  // ── 예산 소진율 낮음 → 메인 키워드 입찰가 상향 ──────────────────────────
+  const lowCtrHighRoasKws = totalKwSpend > 0
+    ? keywords.filter(k =>
+        k.키워드 !== '비검색' &&
+        isManualCampaign(k.캠페인명) &&
+        k.ROAS_14일 > 200 &&
+        k.CTR < 0.8 &&
+        k.광고비 > 0
+      )
+    : []
+  if (lowCtrHighRoasKws.length) {
+    const top = [...lowCtrHighRoasKws].sort((a, b) => b.ROAS_14일 - a.ROAS_14일)[0]
+    insights.push({
+      type: 'expand', title: '메인 키워드 입찰가 상향 검토', badge: '예산 여력',
+      body: `[수동] '${top.키워드}' ROAS ${top.ROAS_14일.toLocaleString()}%로 효율 양호하나, CTR ${top.CTR.toFixed(2)}%로 노출이 부족합니다. 예산 소진 여력이 있습니다.`,
+      action: '입찰가 10~20% 상향으로 노출 점유율 및 클릭 수 확대 검토',
+    })
+  }
+
   if (!insights.length) {
     insights.push({
       type: 'info', title: '전반적 성과 양호', badge: '정상',
@@ -259,4 +303,84 @@ export function generateInsights(data) {
     })
   }
   return insights
+}
+
+// ─── 브랜드 키워드 판별 ──────────────────────────────────────────────────────
+
+const BRAND_KW_LIST = ['메이제이', 'mayjay', 'may jay', '덴티프레쉬', '덴티파워']
+
+export const isBrandKeyword = (kw = '') => {
+  const lower = kw.toLowerCase()
+  return BRAND_KW_LIST.some(b => lower.includes(b.toLowerCase()))
+}
+
+// ─── 상품명 정규화 ───────────────────────────────────────────────────────────
+
+export function normalizeProductName(raw = '') {
+  if (!raw) return '(미지정)'
+  const parts = raw.split(',').map(p => p.trim()).filter(Boolean)
+  const seen = new Set(); const unique = []
+  for (const p of parts) { if (!seen.has(p)) { seen.add(p); unique.push(p) } }
+  const filtered = unique.filter(p => !/^\d+개$/.test(p))
+  return (filtered.length ? filtered : unique).join(' ').trim() || raw
+}
+
+export function extractBundleCount(raw = '') {
+  for (const p of raw.split(',').map(s => s.trim())) {
+    const m = p.match(/^(\d+)개$/)
+    if (m) return parseInt(m[1], 10)
+  }
+  return 1
+}
+
+export function groupByNormalizedProduct(data) {
+  const m = {}
+  for (const r of data) {
+    const raw = r['광고집행 상품명'] ?? '(미지정)'
+    const norm = normalizeProductName(raw)
+    const bundle = extractBundleCount(raw)
+    const optId = r['광고집행 옵션ID'] ? String(r['광고집행 옵션ID']).trim() : null
+    if (!m[norm]) m[norm] = {
+      상품명: norm, 광고비: 0, 매출_1일: 0, 매출_14일: 0,
+      주문수_1일: 0, 주문수_14일: 0, 클릭수: 0, bundles: {},
+    }
+    const g = m[norm]
+    g.광고비      += r['광고비'] ?? 0
+    g.매출_1일    += r['총 전환매출액(1일)'] ?? 0
+    g.매출_14일   += r['총 전환매출액(14일)'] ?? 0
+    g.주문수_1일  += r['총 주문수(1일)'] ?? 0
+    g.주문수_14일 += r['총 주문수(14일)'] ?? 0
+    g.클릭수      += r['클릭수'] ?? 0
+    if (!g.bundles[bundle]) g.bundles[bundle] = { 광고비: 0, 매출_14일: 0, optionIds: new Set() }
+    g.bundles[bundle].광고비    += r['광고비'] ?? 0
+    g.bundles[bundle].매출_14일 += r['총 전환매출액(14일)'] ?? 0
+    if (optId && optId !== 'nan') g.bundles[bundle].optionIds.add(optId)
+  }
+  return Object.values(m).map(p => {
+    const bundleCount = Object.keys(p.bundles).length
+    const bundleRoas = {}
+    const bundleDetails = {}
+    for (const [cnt, b] of Object.entries(p.bundles)) {
+      const label = `${cnt}개`
+      const roas = b.광고비 > 0 ? Math.round(b.매출_14일 / b.광고비 * 100) : 0
+      bundleRoas[label] = roas
+      bundleDetails[label] = {
+        ROAS: roas,
+        광고비: b.광고비,
+        매출_14일: b.매출_14일,
+        optionIds: [...b.optionIds],
+      }
+    }
+    const { bundles: _b, ...rest } = p
+    return {
+      ...rest,
+      ROAS_14일: p.광고비 > 0 ? Math.round(p.매출_14일 / p.광고비 * 100) : 0,
+      CPC: p.클릭수 > 0 ? Math.round(p.광고비 / p.클릭수) : 0,
+      CVR: p.클릭수 > 0 ? (p.주문수_14일 / p.클릭수 * 100) : 0,
+      bundleRoas,
+      bundleDetails,
+      bundleCount,
+      hasZeroRevenue: p.매출_14일 === 0 && p.광고비 >= 10000,
+    }
+  }).sort((a, b) => b.매출_14일 - a.매출_14일)
 }

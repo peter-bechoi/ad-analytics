@@ -5,6 +5,7 @@ import DashboardPage from './pages/DashboardPage'
 import InsightsPage from './pages/InsightsPage'
 import ReportPage from './pages/ReportPage'
 import LoginPage from './pages/LoginPage'
+import KeywordAnalysisPage from './pages/KeywordAnalysisPage'
 import { uploadFile, pingHealth } from './api/client'
 
 const PING_INTERVAL_MS = 5 * 60 * 1000 // 5분
@@ -143,6 +144,9 @@ export default function App() {
         )}
         {activeTab === 'insights' && (
           <InsightsPage data={rows} />
+        )}
+        {activeTab === 'keyword-analysis' && (
+          <KeywordAnalysisPage data={rows} />
         )}
         {activeTab === 'report' && (
           <ReportPage

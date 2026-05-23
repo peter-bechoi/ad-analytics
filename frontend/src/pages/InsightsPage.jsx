@@ -1,11 +1,13 @@
 import { useState, useMemo, useEffect, useCallback, useTransition, useRef } from 'react'
 import {
   PieChart, Pie, Cell, Tooltip as ChartTooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from 'recharts'
 import {
   getUnique, isManualCampaign,
   groupByCampaign, groupByKeyword, groupByPlacement,
   aggregateKpis, generateInsights,
+  groupByNormalizedProduct,
 } from '../utils/dataHelpers'
 import { fmtNumber, fmtWon, fmtPercent } from '../utils/format'
 
@@ -20,6 +22,42 @@ function Spinner() {
       </div>
       <p className="text-xs text-slate-400">데이터 로드 중...</p>
     </div>
+  )
+}
+
+// ─── 복사 토스트 ──────────────────────────────────────────────────────────────
+
+function CopyToast({ visible }) {
+  if (!visible) return null
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-800 text-white text-xs font-semibold px-4 py-2.5 rounded-full shadow-lg pointer-events-none select-none">
+      복사됨!
+    </div>
+  )
+}
+
+// ─── 칼럼 리사이즈 헤더 ─────────────────────────────────────────────────────
+
+function ResizableTh({ children, defaultWidth = 140, minWidth = 60, className = '', ...rest }) {
+  const [width, setWidth] = useState(defaultWidth)
+  const startX = useRef(null)
+  const startW = useRef(null)
+
+  const onMouseDown = (e) => {
+    e.stopPropagation()
+    startX.current = e.clientX
+    startW.current = width
+    const onMove = (ev) => setWidth(Math.max(minWidth, startW.current + ev.clientX - startX.current))
+    const onUp   = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup',   onUp)
+  }
+
+  return (
+    <th style={{ width, minWidth }} className={`relative select-none ${className}`} {...rest}>
+      {children}
+      <div onMouseDown={onMouseDown} className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-slate-300/60 active:bg-blue-300/60" />
+    </th>
   )
 }
 
@@ -124,7 +162,14 @@ function CompareTable({ rows, nameKey, nameLabel, showManualBadge = false, showC
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-200">
-              {th(nameKey, nameLabel)}
+              <ResizableTh
+                key={nameKey}
+                onClick={() => handleSort(nameKey)}
+                defaultWidth={160}
+                className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer hover:text-slate-800 whitespace-nowrap"
+              >
+                {nameLabel}{sort.key === nameKey ? (sort.dir === 'desc' ? ' ↓' : ' ↑') : ''}
+              </ResizableTh>
               {th('광고비',      '광고비')}
               {th('매출_1일',    '직접매출(1일)')}
               {th('매출_14일',   '간접매출(14일)')}
@@ -140,7 +185,7 @@ function CompareTable({ rows, nameKey, nameLabel, showManualBadge = false, showC
               <tr key={i} className="border-b border-slate-100 hover:bg-slate-50/70 transition-colors">
                 <td className="px-3 py-2.5 font-medium text-slate-800">
                   <div className="flex items-center gap-1.5 max-w-[160px]">
-                    <span className="truncate">{r[nameKey]}</span>
+                    <span title={r[nameKey]} className="truncate">{r[nameKey]}</span>
                     {showManualBadge && isManualCampaign(r[nameKey] ?? '') && (
                       <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">수동</span>
                     )}
@@ -229,7 +274,7 @@ function KeywordTable({ rows, initDir, headerText, headerCls }) {
     if (col.key === '키워드') {
       return (
         <div className="flex items-center gap-1.5">
-          <span className="font-medium text-slate-800 max-w-[100px] truncate block">{kw.키워드}</span>
+          <span title={kw.키워드} className="font-medium text-slate-800 max-w-[100px] truncate block">{kw.키워드}</span>
           {isReachable(kw) && (
             <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">도달유지</span>
           )}
@@ -250,14 +295,18 @@ function KeywordTable({ rows, initDir, headerText, headerCls }) {
           <thead>
             <tr className="border-b border-slate-200">
               {KW_COLS.map(col => (
-                <th
-                  key={col.key}
-                  onClick={() => col.sortable && setSort(s => ({ key: col.key, dir: s.key === col.key && s.dir === 'desc' ? 'asc' : 'desc' }))}
-                  className={`px-3 py-2 text-left text-xs font-semibold text-slate-500 select-none whitespace-nowrap ${col.sortable ? 'cursor-pointer hover:text-slate-800' : ''}`}
-                >
-                  {col.label}
-                  {col.sortable && sort.key === col.key ? (sort.dir === 'desc' ? ' ↓' : ' ↑') : ''}
-                </th>
+                col.key === '키워드'
+                  ? <ResizableTh key={col.key} defaultWidth={110} className="px-3 py-2 text-left text-xs font-semibold text-slate-500">
+                      {col.label}
+                    </ResizableTh>
+                  : <th
+                      key={col.key}
+                      onClick={() => col.sortable && setSort(s => ({ key: col.key, dir: s.key === col.key && s.dir === 'desc' ? 'asc' : 'desc' }))}
+                      className={`px-3 py-2 text-left text-xs font-semibold text-slate-500 select-none whitespace-nowrap ${col.sortable ? 'cursor-pointer hover:text-slate-800' : ''}`}
+                    >
+                      {col.label}
+                      {col.sortable && sort.key === col.key ? (sort.dir === 'desc' ? ' ↓' : ' ↑') : ''}
+                    </th>
               ))}
             </tr>
           </thead>
@@ -370,7 +419,7 @@ const PRODUCT_COLS = [
   { key: '주문수_14일', label: '주문(14일)',     sortable: true },
 ]
 
-function ProductTab({ selectedCampaign }) {
+function ProductTab({ selectedCampaign, onCopy }) {
   const PAGE_LIMIT = 20
   const [result,  setResult]  = useState(null)
   const [loading, setLoading] = useState(false)
@@ -495,16 +544,20 @@ function ProductTab({ selectedCampaign }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200">
-                {PRODUCT_COLS.map(col => (
-                  <th
-                    key={col.key}
-                    onClick={() => col.sortable && handleSort(col.key)}
-                    className={`px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide select-none whitespace-nowrap ${col.sortable ? 'cursor-pointer hover:text-slate-800' : ''}`}
-                  >
-                    {col.label}
-                    {col.sortable && sort.key === col.key ? (sort.dir === 'desc' ? ' ↓' : ' ↑') : ''}
-                  </th>
-                ))}
+                {PRODUCT_COLS.map(col =>
+                  col.key === '상품명'
+                    ? <ResizableTh key={col.key} defaultWidth={200} className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide select-none">
+                        {col.label}
+                      </ResizableTh>
+                    : <th
+                        key={col.key}
+                        onClick={() => col.sortable && handleSort(col.key)}
+                        className={`px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide select-none whitespace-nowrap ${col.sortable ? 'cursor-pointer hover:text-slate-800' : ''}`}
+                      >
+                        {col.label}
+                        {col.sortable && sort.key === col.key ? (sort.dir === 'desc' ? ' ↓' : ' ↑') : ''}
+                      </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -522,7 +575,15 @@ function ProductTab({ selectedCampaign }) {
                 : items.map((r, i) => (
                     <tr key={i} className="border-b border-slate-100 hover:bg-slate-50/70 transition-colors">
                       <td className="px-3 py-2.5 font-medium text-slate-800 max-w-[200px]">
-                        <span className="truncate block">{r.상품명}</span>
+                        <span title={r.상품명} className="truncate block">{r.상품명}</span>
+                        {r.옵션ID && (
+                          <button
+                            onClick={() => onCopy?.(String(r.옵션ID))}
+                            className="text-[11px] text-slate-400 hover:text-blue-600 font-mono mt-0.5 transition-colors block truncate max-w-full"
+                          >
+                            #{r.옵션ID}
+                          </button>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 text-slate-600">{fmtWon(r.광고비)}</td>
                       <td className="px-3 py-2.5 text-slate-600">{fmtWon(r.매출_1일)}</td>
@@ -573,6 +634,221 @@ function ProductTab({ selectedCampaign }) {
   )
 }
 
+// ─── 정규화 상품 분석 섹션 ────────────────────────────────────────────────────
+
+const ROAS_BAR_COLOR = r => r >= 400 ? '#10B981' : r >= 200 ? '#2563EB' : r >= 100 ? '#F59E0B' : '#EF4444'
+
+function NormalizedProductSection({ data, onCopy }) {
+  const products = useMemo(() => groupByNormalizedProduct(data), [data])
+  const [expandedRows, setExpandedRows] = useState(new Set())
+
+  const warnProducts = useMemo(
+    () => products.filter(p => p.hasZeroRevenue).slice(0, 6),
+    [products]
+  )
+
+  const bundleProducts = useMemo(
+    () => products.filter(p => p.bundleCount > 1).slice(0, 4),
+    [products]
+  )
+
+  const toggleRow = useCallback((name) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }, [])
+
+  if (!products.length) return null
+
+  return (
+    <div className="space-y-4">
+      {/* 전환매출 0 경고 박스 */}
+      {warnProducts.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+            <span className="text-sm font-semibold text-amber-800">전환매출 0 경고 상품</span>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{warnProducts.length}개</span>
+          </div>
+          <div className="space-y-1.5">
+            {warnProducts.map((p, i) => (
+              <div key={i} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-amber-100">
+                <span className="text-xs font-medium text-slate-800 truncate max-w-[200px]">{p.상품명}</span>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-xs text-slate-500">광고비 {fmtWon(p.광고비)}</span>
+                  <span className="text-xs font-bold text-rose-600">전환매출 없음</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-amber-600 mt-2.5 leading-relaxed">
+            → 광고비 1만원 이상 집행 중이나 전환이 없는 상품입니다. 상품 경쟁력(가격·이미지·리뷰) 점검 또는 광고 중지 검토 필요.
+          </p>
+        </div>
+      )}
+
+      {/* 구성별 ROAS 비교 차트 */}
+      {bundleProducts.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <h3 className="text-sm font-semibold text-slate-800 mb-1">구성별 ROAS 비교</h3>
+          <p className="text-xs text-slate-400 mb-5">동일 상품의 구성(1개/2개/3개/6개)별 ROAS 비교 · 14일 기준</p>
+          <div className="space-y-5">
+            {bundleProducts.map((p, i) => {
+              const chartData = Object.entries(p.bundleRoas)
+                .map(([label, roas]) => ({ label, ROAS: roas }))
+                .sort((a, b) => parseInt(a.label) - parseInt(b.label))
+              return (
+                <div key={i}>
+                  <p className="text-xs font-semibold text-slate-700 mb-2 truncate">{p.상품명}</p>
+                  <div style={{ height: 72 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 56, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" horizontal={false} />
+                        <XAxis type="number" tick={{ fontSize: 10, fill: '#94A3B8' }} tickFormatter={v => `${v}%`} axisLine={false} tickLine={false} />
+                        <YAxis type="category" dataKey="label" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} width={30} />
+                        <ChartTooltip formatter={v => [`${v.toLocaleString()}%`, 'ROAS']} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E2E8F0' }} />
+                        <Bar dataKey="ROAS" radius={[0, 3, 3, 0]} maxBarSize={14} label={{ position: 'right', fontSize: 10, fill: '#64748B', formatter: v => `${v.toLocaleString()}%` }}>
+                          {chartData.map((e, j) => <Cell key={j} fill={ROAS_BAR_COLOR(e.ROAS)} />)}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 정규화 상품 테이블 (펼치기/접기) */}
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200">
+          <h3 className="text-sm font-semibold text-slate-800">정규화 상품 성과</h3>
+          <p className="text-xs text-slate-400 mt-0.5">수량 제거 후 상품 그룹별 집계 · ▶ 클릭 시 구성별 옵션ID 확인 · 상위 {Math.min(products.length, 15)}개</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200">
+                <th className="w-8 px-2 py-2.5" />
+                <ResizableTh defaultWidth={200} className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500">상품명</ResizableTh>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500">광고비</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500">전환매출</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500">ROAS</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500">주문수</th>
+                <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500">상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              {products.slice(0, 15).map((p, i) => {
+                const isExpanded = expandedRows.has(p.상품명)
+                const bundleEntries = Object.entries(p.bundleDetails ?? {})
+                  .sort(([a], [b]) => parseInt(a) - parseInt(b))
+                return (
+                  <>
+                    <tr
+                      key={`row-${i}`}
+                      className={`border-b border-slate-100 transition-colors ${p.hasZeroRevenue ? 'bg-amber-50/30' : 'hover:bg-slate-50/70'}`}
+                    >
+                      {/* 펼치기 버튼 */}
+                      <td className="px-2 py-2.5 text-center">
+                        {bundleEntries.length > 0 && (
+                          <button
+                            onClick={() => toggleRow(p.상품명)}
+                            className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-slate-700 transition-colors rounded"
+                          >
+                            <svg
+                              className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                              fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                            </svg>
+                          </button>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 font-medium text-slate-800 max-w-[200px]">
+                        <span title={p.상품명} className="truncate block">{p.상품명}</span>
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-xs text-slate-500">{fmtWon(p.광고비)}</td>
+                      <td className="px-3 py-2.5 text-right text-xs font-semibold text-slate-800">{fmtWon(p.매출_14일)}</td>
+                      <td className="px-3 py-2.5 text-right">{ROAS_CHIP(p.ROAS_14일)}</td>
+                      <td className="px-3 py-2.5 text-right text-xs text-slate-500">{fmtNumber(p.주문수_14일)}</td>
+                      <td className="px-3 py-2.5 text-center">
+                        {p.hasZeroRevenue
+                          ? <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">경고</span>
+                          : p.ROAS_14일 >= 400
+                            ? <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">우수</span>
+                            : null
+                        }
+                      </td>
+                    </tr>
+
+                    {/* 펼쳐진 구성별 서브테이블 */}
+                    {isExpanded && bundleEntries.length > 0 && (
+                      <tr key={`detail-${i}`} className="border-b border-slate-200">
+                        <td colSpan={7} className="px-4 py-2.5 bg-slate-50">
+                          <div className="rounded-lg border border-slate-200 overflow-hidden">
+                            <table className="w-full">
+                              <thead>
+                                <tr className="bg-slate-100 border-b border-slate-200">
+                                  <th className="px-3 py-2 text-left text-[11px] font-semibold text-slate-500">구성</th>
+                                  <th className="px-3 py-2 text-left text-[11px] font-semibold text-slate-500">옵션ID</th>
+                                  <th className="px-3 py-2 text-right text-[11px] font-semibold text-slate-500">광고비</th>
+                                  <th className="px-3 py-2 text-right text-[11px] font-semibold text-slate-500">전환매출</th>
+                                  <th className="px-3 py-2 text-right text-[11px] font-semibold text-slate-500">ROAS</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {bundleEntries.map(([label, detail], j) => (
+                                  <tr key={j} className="border-t border-slate-100 hover:bg-white transition-colors">
+                                    <td className="px-3 py-2 text-xs font-semibold text-slate-700">{label}</td>
+                                    <td className="px-3 py-2">
+                                      {detail.optionIds.length > 0 ? (
+                                        detail.optionIds.map((id, k) => (
+                                          <button
+                                            key={k}
+                                            onClick={() => onCopy?.(id)}
+                                            className="text-[11px] font-mono text-slate-500 hover:text-blue-600 transition-colors mr-1.5"
+                                          >
+                                            #{id}
+                                          </button>
+                                        ))
+                                      ) : (
+                                        <span className="text-[11px] text-slate-300">-</span>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2 text-right text-xs text-slate-500">{fmtWon(detail.광고비)}</td>
+                                    <td className="px-3 py-2 text-right text-xs font-semibold text-slate-700">{fmtWon(detail.매출_14일)}</td>
+                                    <td className="px-3 py-2 text-right">{ROAS_CHIP(detail.ROAS)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                )
+              })}
+              {!products.length && (
+                <tr>
+                  <td colSpan={7} className="px-3 py-10 text-center text-slate-400">데이터 없음</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── 지면별 탭 ────────────────────────────────────────────────────────────────
 
 function PlacementTab({ placements, campaignLabel }) {
@@ -580,9 +856,17 @@ function PlacementTab({ placements, campaignLabel }) {
     return <p className="px-5 py-10 text-center text-slate-400 text-sm">지면 데이터 없음</p>
   }
 
-  const totalSpend = placements.reduce((s, p) => s + p.광고비, 0)
-  const best  = [...placements].sort((a, b) => b.ROAS - a.ROAS)[0]
-  const worst = [...placements].sort((a, b) => a.ROAS - b.ROAS)[0]
+  const totalSpend          = placements.reduce((s, p) => s + p.광고비, 0)
+  const best                = [...placements].sort((a, b) => b.ROAS - a.ROAS)[0]
+  const worst               = [...placements].sort((a, b) => a.ROAS - b.ROAS)[0]
+  const audiencePlacement   = placements.find(p => p.지면.includes('오디언스'))
+  const nonAudience         = placements.filter(p => !p.지면.includes('오디언스'))
+  const minOtherRoas        = nonAudience.length ? Math.min(...nonAudience.map(p => p.ROAS)) : null
+  const allLowRoas          = placements.every(p => p.ROAS <= 100)
+  const showAudienceOff     = audiencePlacement && (
+    audiencePlacement.ROAS <= 100 ||
+    (minOtherRoas !== null && audiencePlacement.ROAS < minOtherRoas / 2)
+  )
 
   return (
     <div className="space-y-4">
@@ -629,16 +913,25 @@ function PlacementTab({ placements, campaignLabel }) {
           <span className="text-xs bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded-full">{campaignLabel}</span>
         </div>
         <p className="text-xs text-slate-600 leading-relaxed">
-          <strong>{best.지면}</strong> 지면이 ROAS {best.ROAS.toLocaleString()}%로 가장 높은 성과를 기록하고 있습니다.
-          {worst.지면 !== best.지면
+          <strong>{best.지면}</strong> 지면이 ROAS {best.ROAS.toLocaleString()}%로{' '}
+          {allLowRoas
+            ? '가장 높은 성과이나, 100% 미만으로 손실 구간입니다.'
+            : '가장 높은 성과를 기록하고 있습니다.'
+          }
+          {!allLowRoas && worst.지면 !== best.지면
             ? ` 반면 ${worst.지면} 지면은 ROAS ${worst.ROAS.toLocaleString()}%로 개선이 필요합니다.`
-            : ' 전체 지면이 균등한 성과를 보이고 있습니다.'
+            : !allLowRoas ? ' 전체 지면이 균등한 성과를 보이고 있습니다.' : ''
           }
         </p>
         <p className="text-xs font-semibold text-blue-700">
           → {best.지면} 예산 집중 편성 검토
-          {worst.지면 !== best.지면? ` · ${worst.지면} 입찰 전략 재검토` : ''}
+          {!showAudienceOff && worst.지면 !== best.지면 ? ` · ${worst.지면} 입찰 전략 재검토` : ''}
         </p>
+        {showAudienceOff && (
+          <p className="text-xs font-semibold text-rose-600">
+            ⚠ 오디언스 플러스 지면 OFF를 적극 검토하세요 (ROAS {audiencePlacement.ROAS.toLocaleString()}%)
+          </p>
+        )}
       </div>
     </div>
   )
@@ -681,13 +974,16 @@ function AnomalyCards({ insights }) {
 
 // ─── AI 플레이북 ──────────────────────────────────────────────────────────────
 
-function PlaybookPanel({ filteredData, campaignLabel }) {
+function PlaybookPanel({ filteredData, campaignLabel, allData }) {
   const kpis      = useMemo(() => aggregateKpis(filteredData), [filteredData])
+  const allKpis   = useMemo(() => aggregateKpis(allData ?? filteredData), [allData, filteredData])
   const campaigns = useMemo(() => groupByCampaign(filteredData), [filteredData])
   const [copied, setCopied] = useState(false)
 
   const top    = campaigns[0]
   const bottom = campaigns[campaigns.length - 1]
+  const avgCTR = allKpis.CTR
+  const ctrLevel = kpis.CTR < avgCTR * 0.5 ? '낮은' : '양호한'
   const text   = [
     campaignLabel !== '전체' ? `[${campaignLabel}] 캠페인 분석 결과입니다.` : null,
     `이번 기간 총 광고비 ${fmtWon(kpis.광고비)}을 집행하여 ${fmtWon(kpis.매출_14일)}의 전환 매출을 달성했습니다.`,
@@ -696,7 +992,7 @@ function PlaybookPanel({ filteredData, campaignLabel }) {
       ? `최고 성과 캠페인은 '${top.캠페인명}'으로 ROAS ${top.ROAS_14일.toLocaleString()}%를 기록했습니다.` : '',
     bottom && bottom !== top && campaignLabel === '전체'
       ? `'${bottom.캠페인명}' 캠페인은 ROAS ${bottom.ROAS_14일.toLocaleString()}%로 개선이 필요합니다.` : '',
-    `CTR ${fmtPercent(kpis.CTR, 2)}, CPC ${fmtWon(kpis.CPC)}, CVR ${fmtPercent(kpis.CVR, 2)}로 전반적으로 ${kpis.CTR > 1.5 ? '양호한' : '개선 여지가 있는'} 클릭 효율을 보이고 있습니다.`,
+    `CTR ${fmtPercent(kpis.CTR, 2)}로 전체 캠페인 평균(${fmtPercent(avgCTR, 2)}) 대비 ${ctrLevel} 수준입니다. CPC ${fmtWon(kpis.CPC)}, CVR ${fmtPercent(kpis.CVR, 2)} 기록.`,
   ].filter(Boolean).join('\n\n')
 
   const handleCopy = () => {
@@ -741,6 +1037,15 @@ export default function InsightsPage({ data }) {
   const [dim, setDim]                           = useState('campaign')
   const [selectedCampaign, setSelectedCampaign] = useState('전체')
   const [isPending, startTransition]            = useTransition()
+  const [showToast, setShowToast]               = useState(false)
+  const toastTimer                              = useRef(null)
+
+  const handleCopy = useCallback((text) => {
+    navigator.clipboard.writeText(text).catch(() => {})
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    setShowToast(true)
+    toastTimer.current = setTimeout(() => setShowToast(false), 1000)
+  }, [])
 
   const campaignNames = useMemo(() => getUnique(data, '캠페인명'), [data])
 
@@ -844,9 +1149,12 @@ export default function InsightsPage({ data }) {
         <div className="bg-white rounded-xl border border-slate-200"><Spinner /></div>
       ) : (
         <>
-          {/* 상품별: 백엔드 API 기반 전용 컴포넌트 */}
+          {/* 상품별: 정규화 분석 + 백엔드 API 기반 상세 */}
           {dim === 'product' && (
-            <ProductTab selectedCampaign={selectedCampaign} />
+            <div className="space-y-4">
+              <NormalizedProductSection data={filteredData} onCopy={handleCopy} />
+              <ProductTab selectedCampaign={selectedCampaign} onCopy={handleCopy} />
+            </div>
           )}
 
           {/* 캠페인별 / 키워드별: 프론트 집계 테이블 */}
@@ -900,7 +1208,9 @@ export default function InsightsPage({ data }) {
       </div>
 
       {/* AI 플레이북 */}
-      <PlaybookPanel filteredData={filteredData} campaignLabel={selectedCampaign} />
+      <PlaybookPanel filteredData={filteredData} campaignLabel={selectedCampaign} allData={data} />
+
+      <CopyToast visible={showToast} />
     </div>
   )
 }
