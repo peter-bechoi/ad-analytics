@@ -241,18 +241,35 @@ function CompareTable({ rows, nameKey, nameLabel, showManualBadge = false, showC
 
 // ─── 키워드 단일 테이블 (정렬 가능 + 도달유지 뱃지) ───────────────────────────
 
-const KW_COLS = [
-  { key: '키워드',    label: '키워드',        sortable: false },
-  { key: '노출수',    label: '노출수',        sortable: true },
-  { key: '광고비',    label: '광고비',        sortable: true },
-  { key: '매출_14일', label: '전환매출(14일)', sortable: true },
-  { key: 'ROAS_14일', label: 'ROAS(14일)',   sortable: true, chip: true },
-  { key: 'CTR',      label: 'CTR',          sortable: true },
-  { key: 'CPC',      label: 'CPC',          sortable: true },
-]
-
 function KeywordTable({ rows, initDir, headerText, headerCls }) {
-  const [sort, setSort] = useState({ key: 'ROAS_14일', dir: initDir })
+  const [sort,       setSort]       = useState({ key: 'ROAS_14일', dir: initDir })
+  const [convWindow, setConvWindow] = useState('14d')
+
+  const is1d     = convWindow === '1d'
+  const roasKey  = is1d ? 'ROAS_1일'  : 'ROAS_14일'
+  const salesKey = is1d ? '매출_1일'   : '매출_14일'
+  const orderKey = is1d ? '주문수_1일' : '주문수_14일'
+
+  const KW_COLS = [
+    { key: '키워드',  label: '키워드',   sortable: false },
+    { key: '노출수',  label: '노출수',   sortable: true },
+    { key: '광고비',  label: '광고비',   sortable: true },
+    { key: salesKey, label: '전환매출', sortable: true },
+    { key: roasKey,  label: 'ROAS',     sortable: true, chip: true },
+    { key: 'CTR',    label: 'CTR',      sortable: true },
+    { key: 'CPC',    label: 'CPC',      sortable: true },
+    { key: '__cvr',  label: 'CVR',      sortable: false },
+  ]
+
+  const handleWindowChange = (win) => {
+    const rk = win === '1d' ? 'ROAS_1일' : 'ROAS_14일'
+    const sk = win === '1d' ? '매출_1일'  : '매출_14일'
+    setConvWindow(win)
+    setSort(s => {
+      const map = { 'ROAS_1일': rk, 'ROAS_14일': rk, '매출_1일': sk, '매출_14일': sk }
+      return map[s.key] ? { ...s, key: map[s.key] } : s
+    })
+  }
 
   // "도달 유지" 뱃지: 노출수 상위 30% AND ROAS < 200%
   const reachThreshold = useMemo(() => {
@@ -282,7 +299,21 @@ function KeywordTable({ rows, initDir, headerText, headerCls }) {
         </div>
       )
     }
-    if (col.chip)               return ROAS_CHIP(kw[col.key])
+    if (col.key === '__cvr') {
+      const cvr = kw.클릭수 > 0 ? ((kw[orderKey] ?? 0) / kw.클릭수 * 100) : 0
+      return <span className="text-xs text-slate-600">{fmtPercent(cvr, 2)}</span>
+    }
+    if (col.chip) {
+      if (kw.ROAS_14일 === 0 && kw.광고비 > 0 && !isReachable(kw)) {
+        return (
+          <div className="flex flex-col items-start gap-0.5">
+            {ROAS_CHIP(kw[col.key])}
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">제외 추천</span>
+          </div>
+        )
+      }
+      return ROAS_CHIP(kw[col.key])
+    }
     if (col.key === '노출수')   return <span className="text-xs text-slate-600">{fmtNumber(kw.노출수)}</span>
     if (col.key === 'CTR')      return <span className="text-xs text-slate-600">{fmtPercent(kw.CTR, 2)}</span>
     return <span className="text-xs text-slate-600">{fmtWon(kw[col.key])}</span>
@@ -290,7 +321,18 @@ function KeywordTable({ rows, initDir, headerText, headerCls }) {
 
   return (
     <div className="flex-1 min-w-0">
-      <div className={`text-xs font-semibold px-3 py-2 rounded-t-lg ${headerCls}`}>{headerText}</div>
+      <div className={`text-xs font-semibold px-3 py-2 rounded-t-lg flex items-center justify-between ${headerCls}`}>
+        <span>{headerText}</span>
+        <select
+          value={convWindow}
+          onChange={e => handleWindowChange(e.target.value)}
+          onClick={e => e.stopPropagation()}
+          className="text-[10px] font-normal border border-slate-200/60 rounded px-1.5 py-0.5 bg-white/80 text-slate-600"
+        >
+          <option value="14d">14일 직간접전환</option>
+          <option value="1d">1일 직접전환</option>
+        </select>
+      </div>
       <div className="overflow-x-auto border border-t-0 border-slate-200 rounded-b-lg">
         <table className="w-full text-sm">
           <thead>
@@ -700,13 +742,21 @@ function KeywordSection({ keywords, isAll, data }) {
   const realKws  = useMemo(() => displayKeywords.filter(k => k.키워드 !== '비검색' && k.광고비 > 0), [displayKeywords])
   const avgSpend = realKws.length ? realKws.reduce((s, k) => s + k.광고비, 0) / realKws.length : 0
 
+  const reachThreshold = useMemo(() => {
+    if (!realKws.length) return Infinity
+    const vals = [...realKws].map(k => k.노출수 ?? 0).sort((a, b) => b - a)
+    return vals[Math.floor(vals.length * 0.3)] ?? 0
+  }, [realKws])
+
+  const isKwReachable = useCallback(kw => (kw.노출수 ?? 0) >= reachThreshold && kw.ROAS_14일 < 200, [reachThreshold])
+
   const highEff = useMemo(
     () => realKws.filter(k => k.ROAS_14일 > 300 && k.광고비 < avgSpend).sort((a, b) => b.ROAS_14일 - a.ROAS_14일),
     [realKws, avgSpend]
   )
   const lowEff = useMemo(
-    () => realKws.filter(k => k.광고비 > 0 && k.매출_14일 === 0).sort((a, b) => b.광고비 - a.광고비),
-    [realKws]
+    () => realKws.filter(k => k.광고비 > 0 && k.매출_14일 === 0 && !isKwReachable(k)).sort((a, b) => b.광고비 - a.광고비),
+    [realKws, isKwReachable]
   )
 
   const categoryRevenue = useMemo(
@@ -1246,7 +1296,8 @@ function PlacementTab({ placements, campaignLabel }) {
   const nonAudience         = placements.filter(p => !p.지면.includes('오디언스'))
   const minOtherRoas        = nonAudience.length ? Math.min(...nonAudience.map(p => p.ROAS)) : null
   const allLowRoas          = placements.every(p => p.ROAS <= 100)
-  const showAudienceOff     = audiencePlacement && (
+  const isAudienceFree      = audiencePlacement && audiencePlacement.광고비 === 0 && (audiencePlacement.노출수 ?? 0) > 0
+  const showAudienceOff     = audiencePlacement && !isAudienceFree && (
     audiencePlacement.ROAS <= 100 ||
     (minOtherRoas !== null && audiencePlacement.ROAS < minOtherRoas / 2)
   )
@@ -1255,9 +1306,12 @@ function PlacementTab({ placements, campaignLabel }) {
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {placements.map(p => {
-          const cvr   = p.클릭수 > 0 ? (p.주문수_14일 / p.클릭수 * 100) : 0
-          const share = totalSpend > 0 ? Math.round(p.광고비 / totalSpend * 100) : 0
-          const badge = p.ROAS >= 300
+          const cvr      = p.클릭수 > 0 ? (p.주문수_14일 / p.클릭수 * 100) : 0
+          const share    = totalSpend > 0 ? Math.round(p.광고비 / totalSpend * 100) : 0
+          const isFree   = p.지면.includes('오디언스') && p.광고비 === 0 && (p.노출수 ?? 0) > 0
+          const badge    = isFree
+            ? null
+            : p.ROAS >= 300
             ? { txt: 'ROAS 우수', cls: 'text-emerald-700 bg-emerald-100' }
             : p.ROAS >= 150
             ? { txt: 'ROAS 양호', cls: 'text-blue-700 bg-blue-100' }
@@ -1269,7 +1323,7 @@ function PlacementTab({ placements, campaignLabel }) {
                   <p className="text-sm font-bold text-slate-800">{p.지면}</p>
                   <p className="text-xs text-slate-400 mt-0.5">광고비 비중 {share}%</p>
                 </div>
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badge.cls}`}>{badge.txt}</span>
+                {badge && <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badge.cls}`}>{badge.txt}</span>}
               </div>
               <div className="space-y-2.5">
                 {[
@@ -1310,6 +1364,11 @@ function PlacementTab({ placements, campaignLabel }) {
           → {best.지면} 예산 집중 편성 검토
           {!showAudienceOff && worst.지면 !== best.지면 ? ` · ${worst.지면} 입찰 전략 재검토` : ''}
         </p>
+        {isAudienceFree && (
+          <p className="text-xs font-semibold text-sky-600">
+            ℹ 오디언스 플러스는 첫 구매 전환 전까지 과금되지 않습니다. 현재 노출이 발생 중이므로 잠재 고객 확보 측면에서 유지를 권장합니다.
+          </p>
+        )}
         {showAudienceOff && (
           <p className="text-xs font-semibold text-rose-600">
             ⚠ 오디언스 플러스 지면 OFF를 적극 검토하세요 (ROAS {audiencePlacement.ROAS.toLocaleString()}%)
