@@ -305,13 +305,45 @@ export function generateInsights(data) {
   return insights
 }
 
-// ─── 브랜드 키워드 판별 ──────────────────────────────────────────────────────
+// ─── 브랜드 키워드 판별 (레거시, 하위 호환 유지) ─────────────────────────────
 
 const BRAND_KW_LIST = ['메이제이', 'mayjay', 'may jay', '덴티프레쉬', '덴티파워']
 
 export const isBrandKeyword = (kw = '') => {
   const lower = kw.toLowerCase()
   return BRAND_KW_LIST.some(b => lower.includes(b.toLowerCase()))
+}
+
+// ─── 상품명 기반 키워드 자동 분류 ────────────────────────────────────────────
+
+const UNIT_TOKENS = new Set([
+  '개', '정', 'mg', 'g', 'ml', 'l', '회분', '포', '세트', '팩',
+  '박스', '캡슐', '알', '봉', '매', '장', '입', '병', '통', '회', '개입',
+])
+
+export function extractProductTokens(data) {
+  const tokens = new Set()
+  for (const r of data) {
+    const name = r['광고집행 상품명'] ?? ''
+    for (let word of name.split(/[\s,/\\()\[\]\-_|]+/)) {
+      word = word.trim()
+      if (word.length < 2) continue
+      if (/^\d+$/.test(word)) continue
+      if (/^\d+[가-힣a-zA-Z]+$/.test(word)) continue
+      if (UNIT_TOKENS.has(word.toLowerCase())) continue
+      tokens.add(word.toLowerCase())
+    }
+  }
+  return tokens
+}
+
+export function classifyKeyword(keyword, productTokens) {
+  if (!keyword || keyword === '비검색') return 'other'
+  const lower = keyword.toLowerCase()
+  for (const token of productTokens) {
+    if (lower.includes(token)) return 'brand'
+  }
+  return 'category'
 }
 
 // ─── 상품명 정규화 ───────────────────────────────────────────────────────────

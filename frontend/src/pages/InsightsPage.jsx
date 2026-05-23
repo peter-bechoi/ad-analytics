@@ -8,6 +8,7 @@ import {
   groupByCampaign, groupByKeyword, groupByPlacement,
   aggregateKpis, generateInsights,
   groupByNormalizedProduct,
+  extractProductTokens, classifyKeyword,
 } from '../utils/dataHelpers'
 import { fmtNumber, fmtWon, fmtPercent } from '../utils/format'
 
@@ -341,16 +342,281 @@ const DONUT_COLORS = [
   '#0891B2', '#BE185D', '#65A30D', '#9333EA', '#EA580C',
 ]
 
-function KeywordSection({ keywords, isAll }) {
+// ─── 고효율 키워드 테이블 (증액 추천) ─────────────────────────────────────────
+
+function HighEffKeywordTable({ keywords }) {
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col">
+      <div className="px-5 py-3.5 border-b border-slate-200 bg-emerald-50 flex items-center gap-2">
+        <h3 className="text-sm font-semibold text-emerald-800">고효율 키워드</h3>
+        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">{keywords.length}개</span>
+        <span className="text-xs text-emerald-600 ml-auto">ROAS 높고 광고비 적은 키워드</span>
+      </div>
+      <div className="overflow-x-auto flex-1">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-100 bg-slate-50">
+              <ResizableTh defaultWidth={120} className="px-3 py-2 text-left text-xs font-semibold text-slate-500">키워드</ResizableTh>
+              <th className="px-3 py-2 text-right text-xs font-semibold text-slate-500">광고비</th>
+              <th className="px-3 py-2 text-right text-xs font-semibold text-slate-500">전환매출</th>
+              <th className="px-3 py-2 text-right text-xs font-semibold text-slate-500">ROAS</th>
+              <th className="px-3 py-2 text-center text-xs font-semibold text-slate-500">추천</th>
+            </tr>
+          </thead>
+          <tbody>
+            {keywords.slice(0, 10).map((kw, i) => (
+              <tr key={i} className="border-b border-slate-100 hover:bg-slate-50/70">
+                <td className="px-3 py-2.5">
+                  <span title={kw.키워드} className="font-medium text-slate-800 text-xs block truncate max-w-[110px]">{kw.키워드}</span>
+                </td>
+                <td className="px-3 py-2.5 text-right text-xs text-slate-500">{fmtWon(kw.광고비)}</td>
+                <td className="px-3 py-2.5 text-right text-xs text-slate-700 font-medium">{fmtWon(kw.매출_14일)}</td>
+                <td className="px-3 py-2.5 text-right">{ROAS_CHIP(kw.ROAS_14일)}</td>
+                <td className="px-3 py-2.5 text-center">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">증액 추천</span>
+                </td>
+              </tr>
+            ))}
+            {!keywords.length && (
+              <tr><td colSpan={5} className="px-3 py-10 text-center text-slate-400 text-xs">고효율 키워드 없음</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ─── 저효율 키워드 테이블 (제외 추천) ─────────────────────────────────────────
+
+function LowEffKeywordTable({ keywords }) {
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col">
+      <div className="px-5 py-3.5 border-b border-slate-200 bg-rose-50 flex items-center gap-2">
+        <h3 className="text-sm font-semibold text-rose-800">저효율 키워드</h3>
+        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">{keywords.length}개</span>
+        <span className="text-xs text-rose-600 ml-auto">광고비 있으나 전환매출 0</span>
+      </div>
+      <div className="overflow-x-auto flex-1">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-100 bg-slate-50">
+              <ResizableTh defaultWidth={120} className="px-3 py-2 text-left text-xs font-semibold text-slate-500">키워드</ResizableTh>
+              <th className="px-3 py-2 text-right text-xs font-semibold text-slate-500">광고비</th>
+              <th className="px-3 py-2 text-right text-xs font-semibold text-slate-500">클릭수</th>
+              <th className="px-3 py-2 text-right text-xs font-semibold text-slate-500">노출수</th>
+              <th className="px-3 py-2 text-center text-xs font-semibold text-slate-500">추천</th>
+            </tr>
+          </thead>
+          <tbody>
+            {keywords.slice(0, 10).map((kw, i) => (
+              <tr key={i} className="border-b border-slate-100 hover:bg-slate-50/70">
+                <td className="px-3 py-2.5">
+                  <span title={kw.키워드} className="font-medium text-slate-800 text-xs block truncate max-w-[110px]">{kw.키워드}</span>
+                </td>
+                <td className="px-3 py-2.5 text-right text-xs text-rose-600 font-medium">{fmtWon(kw.광고비)}</td>
+                <td className="px-3 py-2.5 text-right text-xs text-slate-500">{fmtNumber(kw.클릭수)}</td>
+                <td className="px-3 py-2.5 text-right text-xs text-slate-500">{fmtNumber(kw.노출수)}</td>
+                <td className="px-3 py-2.5 text-center">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">제외 추천</span>
+                </td>
+              </tr>
+            ))}
+            {!keywords.length && (
+              <tr><td colSpan={5} className="px-3 py-10 text-center text-slate-400 text-xs">저효율 키워드 없음</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ─── Brand Ads 제안 박스 ─────────────────────────────────────────────────────
+
+function BrandAdsBox({ categoryRevenue, totalSpend }) {
+  return (
+    <div className="bg-gradient-to-r from-violet-50 to-blue-50 border border-violet-200 rounded-xl p-5">
+      <div className="flex items-start gap-4">
+        <div className="w-9 h-9 rounded-lg bg-violet-600 flex items-center justify-center shrink-0 mt-0.5">
+          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+          </svg>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-2">
+            <h3 className="text-sm font-bold text-violet-900">Brand Ads 집행 검토</h3>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">추천</span>
+          </div>
+          <p className="text-xs text-slate-600 leading-relaxed mb-3">
+            카테고리 키워드 전환매출{' '}
+            <strong className="text-slate-800">{Math.round(categoryRevenue / 10000)}만원</strong> 달성,
+            전체 광고비{' '}
+            <strong className="text-slate-800">{Math.round(totalSpend / 10000)}만원</strong>{' '}
+            이상 집행 중입니다. 브랜드 검색 점유율 확보를 위한 Brand Ads 집행을 검토할 시점입니다.
+          </p>
+          <div className="space-y-1.5">
+            <p className="flex items-center gap-2 text-xs text-violet-700 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
+              카테고리 키워드 유입 확인 → Brand Ads로 브랜드 전환 유도 검토
+            </p>
+            <p className="flex items-center gap-2 text-xs text-violet-700 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
+              브랜드 검색 시 경쟁사 광고 노출 차단 효과 기대
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── 카테고리 vs 자사 키워드 도넛 ────────────────────────────────────────────
+
+const BC_COLORS = { brand: '#7C3AED', category: '#2563EB', other: '#94A3B8' }
+const BC_LABELS = { brand: '자사 키워드', category: '카테고리 키워드', other: '기타' }
+
+function BrandCategoryDonut({ keywords }) {
+  const [metric,  setMetric]  = useState('revenue')
+  const [showTip, setShowTip] = useState(false)
+
+  const groups = useMemo(() => {
+    const acc = {
+      brand:    { 광고비: 0, 매출_14일: 0 },
+      category: { 광고비: 0, 매출_14일: 0 },
+      other:    { 광고비: 0, 매출_14일: 0 },
+    }
+    for (const k of keywords) {
+      const t = acc[k.분류] ?? acc.other
+      t.광고비    += k.광고비
+      t.매출_14일 += k.매출_14일
+    }
+    return ['brand', 'category', 'other'].map(key => ({
+      key,
+      name:  BC_LABELS[key],
+      value: metric === 'revenue' ? acc[key].매출_14일 : acc[key].광고비,
+      ROAS:  acc[key].광고비 > 0 ? Math.round(acc[key].매출_14일 / acc[key].광고비 * 100) : 0,
+      color: BC_COLORS[key],
+    })).filter(g => g.value > 0)
+  }, [keywords, metric])
+
+  const total = groups.reduce((s, g) => s + g.value, 0)
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-5">
+      <div className="flex items-center gap-1.5 mb-1">
+        <h4 className="text-sm font-semibold text-slate-800">카테고리 vs 자사 키워드</h4>
+        <div className="relative">
+          <button
+            onMouseEnter={() => setShowTip(true)}
+            onMouseLeave={() => setShowTip(false)}
+            className="w-4 h-4 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold flex items-center justify-center hover:bg-slate-200 transition-colors"
+          >
+            i
+          </button>
+          {showTip && (
+            <div className="absolute left-0 top-5 z-20 bg-slate-800 text-white text-xs rounded-lg p-3 w-64 leading-relaxed shadow-xl whitespace-normal">
+              상품명에 포함된 단어가 키워드에 있으면 자사 키워드, 그 외는 카테고리/일반 키워드로 분류합니다. 자동 분류이므로 참고치로만 활용 부탁드립니다.
+            </div>
+          )}
+        </div>
+        <select
+          value={metric}
+          onChange={e => setMetric(e.target.value)}
+          className="ml-auto text-xs border border-slate-200 rounded-md px-2 py-1 text-slate-600 bg-white"
+        >
+          <option value="revenue">전환매출 기준</option>
+          <option value="spend">광고비 기준</option>
+        </select>
+      </div>
+      <p className="text-xs text-slate-400 mb-4">상품명 토큰 기반 자동 분류</p>
+      {groups.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="w-40 h-40 shrink-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={groups} cx="50%" cy="50%" innerRadius={44} outerRadius={68} paddingAngle={2} dataKey="value">
+                  {groups.map((g, i) => <Cell key={i} fill={g.color} />)}
+                </Pie>
+                <ChartTooltip
+                  formatter={(v, name) => [fmtWon(v), name]}
+                  contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E2E8F0' }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex-1 space-y-3 min-w-0">
+            {groups.map((g, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className="w-2.5 h-2.5 rounded-sm shrink-0 mt-0.5" style={{ background: g.color }} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-slate-700">{g.name}</span>
+                    <span className="text-xs font-semibold text-slate-600 shrink-0">{total > 0 ? Math.round(g.value / total * 100) : 0}%</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[11px] text-slate-400">{fmtWon(g.value)}</span>
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                      g.ROAS >= 300 ? 'bg-emerald-100 text-emerald-700'
+                      : g.ROAS >= 100 ? 'bg-blue-100 text-blue-700'
+                      : 'bg-red-100 text-red-700'
+                    }`}>
+                      ROAS {g.ROAS.toLocaleString()}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center justify-center h-32 text-slate-400 text-xs">키워드 분류 데이터 없음</div>
+      )}
+    </div>
+  )
+}
+
+// ─── 키워드 섹션 ─────────────────────────────────────────────────────────────
+
+function KeywordSection({ keywords, isAll, data }) {
   const displayKeywords = isAll ? keywords.slice(0, 100) : keywords
 
   const donutData = useMemo(() => {
-    const top10 = [...displayKeywords].sort((a, b) => b.매출_14일 - a.매출_14일).slice(0, 10)
+    const top10 = [...displayKeywords]
+      .filter(k => k.키워드 !== '비검색')
+      .sort((a, b) => b.매출_14일 - a.매출_14일)
+      .slice(0, 10)
     const total = top10.reduce((s, k) => s + k.매출_14일, 0)
     return total > 0
       ? top10.map(k => ({ name: k.키워드, value: k.매출_14일, pct: Math.round(k.매출_14일 / total * 100) }))
       : []
   }, [displayKeywords])
+
+  const classified = useMemo(() => {
+    const productTokens = extractProductTokens(data)
+    return displayKeywords
+      .filter(k => k.키워드 !== '비검색')
+      .map(k => ({ ...k, 분류: classifyKeyword(k.키워드, productTokens) }))
+  }, [displayKeywords, data])
+
+  const realKws  = useMemo(() => displayKeywords.filter(k => k.키워드 !== '비검색' && k.광고비 > 0), [displayKeywords])
+  const avgSpend = realKws.length ? realKws.reduce((s, k) => s + k.광고비, 0) / realKws.length : 0
+
+  const highEff = useMemo(
+    () => realKws.filter(k => k.ROAS_14일 > 300 && k.광고비 < avgSpend).sort((a, b) => b.ROAS_14일 - a.ROAS_14일),
+    [realKws, avgSpend]
+  )
+  const lowEff = useMemo(
+    () => realKws.filter(k => k.광고비 > 0 && k.매출_14일 === 0).sort((a, b) => b.광고비 - a.광고비),
+    [realKws]
+  )
+
+  const categoryRevenue = useMemo(
+    () => classified.filter(k => k.분류 === 'category').reduce((s, k) => s + k.매출_14일, 0),
+    [classified]
+  )
+  const totalKwSpend = useMemo(() => keywords.reduce((s, k) => s + k.광고비, 0), [keywords])
+  const showBrandAds = categoryRevenue >= 500000 && totalKwSpend >= 3000000
 
   const byDesc = useMemo(() => [...displayKeywords].sort((a, b) => b.ROAS_14일 - a.ROAS_14일), [displayKeywords])
   const byAsc  = useMemo(() => [...displayKeywords].sort((a, b) => a.ROAS_14일 - b.ROAS_14일), [displayKeywords])
@@ -366,37 +632,51 @@ function KeywordSection({ keywords, isAll }) {
         </div>
       )}
 
-      {donutData.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <h4 className="text-sm font-semibold text-slate-800 mb-0.5">상위 10개 키워드 매출 비중</h4>
-          <p className="text-xs text-slate-400 mb-4">광고전환매출액(14일) 기준</p>
-          <div className="flex flex-wrap items-center gap-6">
-            <div className="w-44 h-44 shrink-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={donutData} cx="50%" cy="50%" innerRadius={48} outerRadius={72} paddingAngle={2} dataKey="value">
-                    {donutData.map((_, i) => <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />)}
-                  </Pie>
-                  <ChartTooltip
-                    formatter={(v, name) => [fmtWon(v), name]}
-                    contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E2E8F0' }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2">
-              {donutData.map((d, i) => (
-                <div key={i} className="flex items-center gap-2 min-w-0">
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: DONUT_COLORS[i % DONUT_COLORS.length] }} />
-                  <span className="text-xs text-slate-700 truncate">{d.name}</span>
-                  <span className="text-xs font-semibold text-slate-500 shrink-0 ml-auto">{d.pct}%</span>
-                </div>
-              ))}
+      {/* 도넛 차트 2개 나란히 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {donutData.length > 0 && (
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <h4 className="text-sm font-semibold text-slate-800 mb-0.5">상위 10개 키워드 매출 비중</h4>
+            <p className="text-xs text-slate-400 mb-4">광고전환매출액(14일) 기준</p>
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="w-40 h-40 shrink-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={donutData} cx="50%" cy="50%" innerRadius={44} outerRadius={68} paddingAngle={2} dataKey="value">
+                      {donutData.map((_, i) => <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />)}
+                    </Pie>
+                    <ChartTooltip
+                      formatter={(v, name) => [fmtWon(v), name]}
+                      contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E2E8F0' }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 min-w-0">
+                {donutData.map((d, i) => (
+                  <div key={i} className="flex items-center gap-2 min-w-0">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: DONUT_COLORS[i % DONUT_COLORS.length] }} />
+                    <span title={d.name} className="text-xs text-slate-700 truncate">{d.name}</span>
+                    <span className="text-xs font-semibold text-slate-500 shrink-0 ml-auto">{d.pct}%</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+        <BrandCategoryDonut keywords={classified} />
+      </div>
 
+      {/* 고효율 / 저효율 테이블 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <HighEffKeywordTable keywords={highEff} />
+        <LowEffKeywordTable keywords={lowEff} />
+      </div>
+
+      {/* Brand Ads 제안 */}
+      {showBrandAds && <BrandAdsBox categoryRevenue={categoryRevenue} totalSpend={totalKwSpend} />}
+
+      {/* 상위 / 하위 ROAS 비교 */}
       <div className="flex gap-4">
         <KeywordTable rows={byDesc} initDir="desc" headerText="▲ 상위 키워드 (ROAS 높은 순)" headerCls="bg-emerald-50 text-emerald-700" />
         <KeywordTable rows={byAsc}  initDir="asc"  headerText="▼ 하위 키워드 (ROAS 낮은 순)" headerCls="bg-red-50 text-red-700" />
@@ -1177,10 +1457,7 @@ export default function InsightsPage({ data }) {
           )}
 
           {dim === 'keyword' && (
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-slate-800">상위 vs 하위 키워드 비교</h3>
-              <KeywordSection keywords={dimRows} isAll={isAll} />
-            </div>
+            <KeywordSection keywords={dimRows} isAll={isAll} data={data} />
           )}
 
           {dim === 'placement' && (
