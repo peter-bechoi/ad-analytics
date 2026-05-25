@@ -114,7 +114,7 @@ function CampaignRoasChart({ campaigns }) {
   const [sortDir, setSortDir] = useState('desc')
   const data = useMemo(() => {
     const top8 = [...campaigns].slice(0, 8)
-    return sortDir === 'desc' ? [...top8].reverse() : top8
+    return sortDir === 'asc' ? [...top8].reverse() : top8
   }, [campaigns, sortDir])
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-5 h-full flex flex-col">
