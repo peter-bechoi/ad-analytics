@@ -124,6 +124,15 @@ const ROAS_CHIP = (roas) => {
 
 const PAGE_SIZE = 15
 
+const SORT_PERIOD_MAP = {
+  '매출_1일':    '매출_14일',
+  '매출_14일':   '매출_1일',
+  'ROAS_1일':    'ROAS_14일',
+  'ROAS_14일':   'ROAS_1일',
+  '주문수_1일':  '주문수_14일',
+  '주문수_14일': '주문수_1일',
+}
+
 function CompareTable({ rows, nameKey, nameLabel, showManualBadge = false, showCpc = false, paginated = false }) {
   const [sort, setSort] = useState({ key: '매출_14일', dir: 'desc' })
   const [page, setPage] = useState(0)
@@ -241,14 +250,24 @@ function CompareTable({ rows, nameKey, nameLabel, showManualBadge = false, showC
 
 // ─── 키워드 단일 테이블 (정렬 가능 + 도달유지 뱃지) ───────────────────────────
 
-function KeywordTable({ rows, initDir, headerText, headerCls, showNonSearch }) {
-  const [sort,       setSort]       = useState({ key: 'ROAS_14일', dir: initDir })
-  const [convWindow, setConvWindow] = useState('14d')
+function KeywordTable({ rows, initDir, headerText, headerCls, showNonSearch, convWindow }) {
+  const [sort, setSort] = useState({ key: '매출_14일', dir: 'desc' })
+  const prevConv = useRef(convWindow)
 
   const is1d     = convWindow === '1d'
   const roasKey  = is1d ? 'ROAS_1일'  : 'ROAS_14일'
   const salesKey = is1d ? '매출_1일'   : '매출_14일'
   const orderKey = is1d ? '주문수_1일' : '주문수_14일'
+
+  useEffect(() => {
+    if (prevConv.current !== convWindow) {
+      setSort(s => {
+        const mapped = SORT_PERIOD_MAP[s.key]
+        return mapped ? { ...s, key: mapped } : s
+      })
+      prevConv.current = convWindow
+    }
+  }, [convWindow])
 
   const KW_COLS = [
     { key: '키워드',  label: '키워드',   sortable: false },
@@ -261,16 +280,6 @@ function KeywordTable({ rows, initDir, headerText, headerCls, showNonSearch }) {
     { key: '__cvr',  label: 'CVR',      sortable: false },
   ]
 
-  const handleWindowChange = (win) => {
-    const rk = win === '1d' ? 'ROAS_1일' : 'ROAS_14일'
-    const sk = win === '1d' ? '매출_1일'  : '매출_14일'
-    setConvWindow(win)
-    setSort(s => {
-      const map = { 'ROAS_1일': rk, 'ROAS_14일': rk, '매출_1일': sk, '매출_14일': sk }
-      return map[s.key] ? { ...s, key: map[s.key] } : s
-    })
-  }
-
   // "도달 유지" 뱃지: 노출수 상위 30% AND ROAS < 200%
   const reachThreshold = useMemo(() => {
     if (!rows.length) return Infinity
@@ -278,7 +287,7 @@ function KeywordTable({ rows, initDir, headerText, headerCls, showNonSearch }) {
     return vals[Math.floor(vals.length * 0.3)] ?? 0
   }, [rows])
 
-  const isReachable = (kw) => (kw.노출수 ?? 0) >= reachThreshold && kw.ROAS_14일 < 200
+  const isReachable = (kw) => (kw.노출수 ?? 0) >= reachThreshold && (kw[roasKey] ?? 0) < 200
 
   const sorted = useMemo(() =>
     [...rows]
@@ -306,7 +315,7 @@ function KeywordTable({ rows, initDir, headerText, headerCls, showNonSearch }) {
       return <span className="text-xs text-slate-600">{fmtPercent(cvr, 2)}</span>
     }
     if (col.chip) {
-      if (kw.키워드 !== '비검색' && kw.ROAS_14일 === 0 && kw.광고비 > 0 && !isReachable(kw)) {
+      if (kw.키워드 !== '비검색' && (kw[roasKey] ?? 0) === 0 && kw.광고비 > 0 && !isReachable(kw)) {
         return (
           <div className="flex flex-col items-start gap-0.5">
             {ROAS_CHIP(kw[col.key])}
@@ -325,15 +334,6 @@ function KeywordTable({ rows, initDir, headerText, headerCls, showNonSearch }) {
     <div className="flex-1 min-w-0">
       <div className={`text-xs font-semibold px-3 py-2 rounded-t-lg flex items-center justify-between ${headerCls}`}>
         <span>{headerText}</span>
-        <select
-          value={convWindow}
-          onChange={e => handleWindowChange(e.target.value)}
-          onClick={e => e.stopPropagation()}
-          className="text-[10px] font-normal border border-slate-200/60 rounded px-1.5 py-0.5 bg-white/80 text-slate-600"
-        >
-          <option value="14d">14일 직간접전환</option>
-          <option value="1d">1일 직접전환</option>
-        </select>
       </div>
       <div className="overflow-x-auto border border-t-0 border-slate-200 rounded-b-lg">
         <table className="w-full text-sm">
@@ -388,7 +388,11 @@ const DONUT_COLORS = [
 
 // ─── 고효율 키워드 테이블 (증액 추천) ─────────────────────────────────────────
 
-function HighEffKeywordTable({ keywords }) {
+function HighEffKeywordTable({ keywords, convWindow }) {
+  const is1d     = convWindow === '1d'
+  const salesKey = is1d ? '매출_1일'  : '매출_14일'
+  const roasKey  = is1d ? 'ROAS_1일'  : 'ROAS_14일'
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col">
       <div className="px-5 py-3.5 border-b border-slate-200 bg-emerald-50 flex items-center gap-2">
@@ -414,8 +418,8 @@ function HighEffKeywordTable({ keywords }) {
                   <span title={kw.키워드} className="font-medium text-slate-800 text-xs block truncate max-w-[110px]">{kw.키워드}</span>
                 </td>
                 <td className="px-3 py-2.5 text-right text-xs text-slate-500">{fmtWon(kw.광고비)}</td>
-                <td className="px-3 py-2.5 text-right text-xs text-slate-700 font-medium">{fmtWon(kw.매출_14일)}</td>
-                <td className="px-3 py-2.5 text-right">{ROAS_CHIP(kw.ROAS_14일)}</td>
+                <td className="px-3 py-2.5 text-right text-xs text-slate-700 font-medium">{fmtWon(kw[salesKey])}</td>
+                <td className="px-3 py-2.5 text-right">{ROAS_CHIP(kw[roasKey])}</td>
                 <td className="px-3 py-2.5 text-center">
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">증액 추천</span>
                 </td>
@@ -697,25 +701,30 @@ function BrandCategoryDonut({ keywords, brandTags, onAddTag, onRemoveTag }) {
 
 // ─── 키워드 전환 성과 테이블 (1일 / 14일 탭) ──────────────────────────────────
 
-function KeywordConvTable({ rows }) {
-  const [tab,  setTab]  = useState('14d')
-  const [sort, setSort] = useState({ key: 'ROAS_14일', dir: 'desc' })
+function KeywordConvTable({ rows, convWindow }) {
+  const [sort, setSort] = useState({ key: '매출_14일', dir: 'desc' })
   const [page, setPage] = useState(0)
+  const prevConv = useRef(convWindow)
 
   useEffect(() => { setPage(0) }, [rows])
 
-  const handleTabChange = (t) => {
-    setTab(t)
-    setSort({ key: t === '14d' ? 'ROAS_14일' : 'ROAS_1일', dir: 'desc' })
-    setPage(0)
-  }
+  useEffect(() => {
+    if (prevConv.current !== convWindow) {
+      setSort(s => {
+        const mapped = SORT_PERIOD_MAP[s.key]
+        return mapped ? { ...s, key: mapped } : s
+      })
+      setPage(0)
+      prevConv.current = convWindow
+    }
+  }, [convWindow])
 
   const handleSort = useCallback((key) => {
     setSort(s => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }))
     setPage(0)
   }, [])
 
-  const is1d       = tab === '1d'
+  const is1d       = convWindow === '1d'
   const salesKey   = is1d ? '매출_1일'      : '매출_14일'
   const salesLabel = is1d ? '직접매출(1일)' : '총전환매출(14일)'
   const roasKey    = is1d ? 'ROAS_1일'      : 'ROAS_14일'
@@ -746,23 +755,6 @@ function KeywordConvTable({ rows }) {
 
   return (
     <div>
-      {/* 탭 */}
-      <div className="flex border-b border-slate-200 px-1">
-        {[['14d', '14일 간접전환'], ['1d', '1일 직접전환']].map(([t, label]) => (
-          <button
-            key={t}
-            onClick={() => handleTabChange(t)}
-            className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
-              tab === t
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
       {/* 테이블 */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -831,8 +823,12 @@ function KeywordConvTable({ rows }) {
 
 const LS_BRAND_KEY = 'ad_analytics_brand_tags'
 
-function KeywordSection({ keywords, isAll, data }) {
+function KeywordSection({ keywords, isAll, data, convWindow }) {
   const displayKeywords = isAll ? keywords.slice(0, 100) : keywords
+
+  const is1d     = convWindow === '1d'
+  const salesKey = is1d ? '매출_1일'  : '매출_14일'
+  const roasKey  = is1d ? 'ROAS_1일'  : 'ROAS_14일'
 
   const [showNonSearch, setShowNonSearch] = useState(false)
 
@@ -884,7 +880,7 @@ function KeywordSection({ keywords, isAll, data }) {
     return vals[Math.floor(vals.length * 0.3)] ?? 0
   }, [realKws])
 
-  const isKwReachable = useCallback(kw => (kw.노출수 ?? 0) >= reachThreshold && kw.ROAS_14일 < 200, [reachThreshold])
+  const isKwReachable = useCallback(kw => (kw.노출수 ?? 0) >= reachThreshold && (kw[roasKey] ?? 0) < 200, [reachThreshold, roasKey])
 
   // 비검색 토글에 따라 고효율/저효율 소스 변경
   const effSource = useMemo(
@@ -895,12 +891,12 @@ function KeywordSection({ keywords, isAll, data }) {
   )
 
   const highEff = useMemo(
-    () => effSource.filter(k => k.ROAS_14일 > 300 && k.광고비 < avgSpend).sort((a, b) => b.ROAS_14일 - a.ROAS_14일),
-    [effSource, avgSpend]
+    () => effSource.filter(k => (k[roasKey] ?? 0) > 300 && k.광고비 < avgSpend).sort((a, b) => (b[roasKey] ?? 0) - (a[roasKey] ?? 0)),
+    [effSource, avgSpend, roasKey]
   )
   const lowEff = useMemo(
-    () => effSource.filter(k => k.광고비 > 0 && k.매출_14일 === 0 && !isKwReachable(k)).sort((a, b) => b.광고비 - a.광고비),
-    [effSource, isKwReachable]
+    () => effSource.filter(k => k.광고비 > 0 && (k[salesKey] ?? 0) === 0 && !isKwReachable(k)).sort((a, b) => b.광고비 - a.광고비),
+    [effSource, isKwReachable, salesKey]
   )
 
   const categoryRevenue = useMemo(
@@ -910,8 +906,8 @@ function KeywordSection({ keywords, isAll, data }) {
   const totalKwSpend = useMemo(() => keywords.reduce((s, k) => s + k.광고비, 0), [keywords])
   const showBrandAds = categoryRevenue >= 500000 && totalKwSpend >= 3000000
 
-  const byDesc = useMemo(() => [...displayKeywords].sort((a, b) => b.ROAS_14일 - a.ROAS_14일), [displayKeywords])
-  const byAsc  = useMemo(() => [...displayKeywords].sort((a, b) => a.ROAS_14일 - b.ROAS_14일), [displayKeywords])
+  const byDesc = useMemo(() => [...displayKeywords].sort((a, b) => (b[roasKey] ?? 0) - (a[roasKey] ?? 0)), [displayKeywords, roasKey])
+  const byAsc  = useMemo(() => [...displayKeywords].sort((a, b) => (a[roasKey] ?? 0) - (b[roasKey] ?? 0)), [displayKeywords, roasKey])
 
   return (
     <div className="space-y-4">
@@ -981,7 +977,7 @@ function KeywordSection({ keywords, isAll, data }) {
 
       {/* 고효율 / 저효율 테이블 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <HighEffKeywordTable keywords={highEff} />
+        <HighEffKeywordTable keywords={highEff} convWindow={convWindow} />
         <LowEffKeywordTable keywords={lowEff} />
       </div>
 
@@ -990,8 +986,8 @@ function KeywordSection({ keywords, isAll, data }) {
 
       {/* 상위 / 하위 ROAS 비교 */}
       <div className="flex gap-4">
-        <KeywordTable rows={byDesc} initDir="desc" headerText="▲ 상위 키워드 (ROAS 높은 순)" headerCls="bg-emerald-50 text-emerald-700" showNonSearch={showNonSearch} />
-        <KeywordTable rows={byAsc}  initDir="asc"  headerText="▼ 하위 키워드 (ROAS 낮은 순)" headerCls="bg-red-50 text-red-700" showNonSearch={showNonSearch} />
+        <KeywordTable rows={byDesc} initDir="desc" headerText="▲ 상위 키워드 (ROAS 높은 순)" headerCls="bg-emerald-50 text-emerald-700" showNonSearch={showNonSearch} convWindow={convWindow} />
+        <KeywordTable rows={byAsc}  initDir="asc"  headerText="▼ 하위 키워드 (ROAS 낮은 순)" headerCls="bg-red-50 text-red-700" showNonSearch={showNonSearch} convWindow={convWindow} />
       </div>
     </div>
   )
@@ -1639,6 +1635,7 @@ export default function InsightsPage({ data }) {
   const [selectedCampaign, setSelectedCampaign] = useState('전체')
   const [isPending, startTransition]            = useTransition()
   const [showToast, setShowToast]               = useState(false)
+  const [kwConvWindow, setKwConvWindow]         = useState('14d')
   const toastTimer                              = useRef(null)
 
   const handleCopy = useCallback((text) => {
@@ -1760,27 +1757,48 @@ export default function InsightsPage({ data }) {
 
           {/* 캠페인별 / 키워드별: 프론트 집계 테이블 */}
           {dim !== 'placement' && dim !== 'product' && (
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-              <div className="px-5 py-4 border-b border-slate-200">
-                <h3 className="text-sm font-semibold text-slate-800">직접(1일) vs 간접(14일) 전환 성과</h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  {DIMS.find(d => d.id === dim)?.label} 기준{!isAll && ` · ${selectedCampaign}`}
-                </p>
+            <>
+              {/* 키워드별: 1일/14일 공통 탭 */}
+              {dim === 'keyword' && (
+                <div className="flex gap-1 p-1 bg-slate-100 rounded-xl w-fit">
+                  {[['14d', '14일 직간접전환'], ['1d', '1일 직접전환']].map(([t, label]) => (
+                    <button
+                      key={t}
+                      onClick={() => setKwConvWindow(t)}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        kwConvWindow === t
+                          ? 'bg-white text-slate-800 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-200">
+                  <h3 className="text-sm font-semibold text-slate-800">직접(1일) vs 간접(14일) 전환 성과</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {DIMS.find(d => d.id === dim)?.label} 기준{!isAll && ` · ${selectedCampaign}`}
+                  </p>
+                </div>
+                {dim === 'keyword'
+                ? <KeywordConvTable rows={dimRows} convWindow={kwConvWindow} />
+                : <CompareTable
+                    rows={dimRows}
+                    nameKey={dimNameKey[dim]}
+                    nameLabel={dimNameLabel[dim]}
+                    showManualBadge={dim === 'campaign'}
+                  />
+                }
               </div>
-              {dim === 'keyword'
-              ? <KeywordConvTable rows={dimRows} />
-              : <CompareTable
-                  rows={dimRows}
-                  nameKey={dimNameKey[dim]}
-                  nameLabel={dimNameLabel[dim]}
-                  showManualBadge={dim === 'campaign'}
-                />
-            }
-            </div>
+            </>
           )}
 
           {dim === 'keyword' && (
-            <KeywordSection keywords={dimRows} isAll={isAll} data={data} />
+            <KeywordSection keywords={dimRows} isAll={isAll} data={data} convWindow={kwConvWindow} />
           )}
 
           {dim === 'placement' && (
