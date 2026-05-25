@@ -48,7 +48,7 @@ export default function LoginPage({ onLogin }) {
         </div>
 
         {/* 카드 */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-8 py-8">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-8 py-8 space-y-0">
           <h1 className="text-lg font-bold text-slate-900 mb-6">로그인</h1>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -93,6 +93,21 @@ export default function LoginPage({ onLogin }) {
               {loading ? '확인 중...' : '로그인'}
             </button>
           </form>
+        </div>
+
+        {/* 쿠팡광고센터 링크 */}
+        <div className="text-center mt-5">
+          <a
+            href="https://advertising.coupang.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-blue-600 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+            </svg>
+            쿠팡광고센터 바로가기
+          </a>
         </div>
       </div>
     </div>

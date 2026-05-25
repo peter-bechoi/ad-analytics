@@ -60,13 +60,18 @@ export function groupByDate(data) {
   for (const r of data) {
     const d = r['날짜']; if (!d) continue
     if (!m[d]) m[d] = { 날짜: d, 노출수: 0, 클릭수: 0, 광고비: 0, 매출_14일: 0, 주문수_14일: 0 }
-    m[d].노출수    += r['노출수'] ?? 0
-    m[d].클릭수    += r['클릭수'] ?? 0
-    m[d].광고비    += r['광고비'] ?? 0
-    m[d].매출_14일 += r['총 전환매출액(14일)'] ?? 0
+    m[d].노출수      += r['노출수'] ?? 0
+    m[d].클릭수      += r['클릭수'] ?? 0
+    m[d].광고비      += r['광고비'] ?? 0
+    m[d].매출_14일   += r['총 전환매출액(14일)'] ?? 0
     m[d].주문수_14일 += r['총 주문수(14일)'] ?? 0
   }
-  return Object.values(m).sort((a, b) => a.날짜.localeCompare(b.날짜))
+  return Object.values(m)
+    .sort((a, b) => a.날짜.localeCompare(b.날짜))
+    .map(d => ({
+      ...d,
+      ROAS_14일: d.광고비 > 0 ? Math.round(d.매출_14일 / d.광고비 * 100) : 0,
+    }))
 }
 
 export function groupByCampaign(data) {

@@ -6,11 +6,12 @@ import {
 import { fmtNumber, fmtWon, fmtPercent } from '../utils/format'
 
 const METRICS = [
-  { key: '광고비',      label: '광고비',    color: '#059669', fmt: v => fmtWon(v) },
-  { key: '매출_14일',   label: '매출(14일)', color: '#D97706', fmt: v => fmtWon(v) },
-  { key: '노출수',      label: '노출수',    color: '#7C3AED', fmt: v => fmtNumber(v) },
-  { key: '클릭수',      label: '클릭수',    color: '#2563EB', fmt: v => fmtNumber(v) },
-  { key: '주문수_14일', label: '주문수',    color: '#DC2626', fmt: v => fmtNumber(v) },
+  { key: '광고비',      label: '광고비',      color: '#059669', fmt: v => fmtWon(v) },
+  { key: '매출_14일',   label: '매출(14일)',  color: '#D97706', fmt: v => fmtWon(v) },
+  { key: 'ROAS_14일',   label: 'ROAS(14일)',  color: '#EC4899', fmt: v => `${(v ?? 0).toLocaleString()}%` },
+  { key: '노출수',      label: '노출수',      color: '#7C3AED', fmt: v => fmtNumber(v) },
+  { key: '클릭수',      label: '클릭수',      color: '#2563EB', fmt: v => fmtNumber(v) },
+  { key: '주문수_14일', label: '주문수',      color: '#DC2626', fmt: v => fmtNumber(v) },
 ]
 
 function MetricBtn({ m, side, active, onClick }) {
