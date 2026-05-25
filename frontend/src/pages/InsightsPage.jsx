@@ -242,8 +242,9 @@ function CompareTable({ rows, nameKey, nameLabel, showManualBadge = false, showC
 // ─── 키워드 단일 테이블 (정렬 가능 + 도달유지 뱃지) ───────────────────────────
 
 function KeywordTable({ rows, initDir, headerText, headerCls }) {
-  const [sort,       setSort]       = useState({ key: 'ROAS_14일', dir: initDir })
-  const [convWindow, setConvWindow] = useState('14d')
+  const [sort,          setSort]          = useState({ key: 'ROAS_14일', dir: initDir })
+  const [convWindow,    setConvWindow]    = useState('14d')
+  const [showNonSearch, setShowNonSearch] = useState(false)
 
   const is1d     = convWindow === '1d'
   const roasKey  = is1d ? 'ROAS_1일'  : 'ROAS_14일'
@@ -281,11 +282,13 @@ function KeywordTable({ rows, initDir, headerText, headerCls }) {
   const isReachable = (kw) => (kw.노출수 ?? 0) >= reachThreshold && kw.ROAS_14일 < 200
 
   const sorted = useMemo(() =>
-    [...rows].sort((a, b) => {
-      const av = a[sort.key] ?? 0, bv = b[sort.key] ?? 0
-      return sort.dir === 'desc' ? bv - av : av - bv
-    }).slice(0, 10),
-    [rows, sort]
+    [...rows]
+      .filter(k => showNonSearch || k.키워드 !== '비검색')
+      .sort((a, b) => {
+        const av = a[sort.key] ?? 0, bv = b[sort.key] ?? 0
+        return sort.dir === 'desc' ? bv - av : av - bv
+      }).slice(0, 10),
+    [rows, sort, showNonSearch]
   )
 
   const renderCell = (col, kw) => {
@@ -293,7 +296,7 @@ function KeywordTable({ rows, initDir, headerText, headerCls }) {
       return (
         <div className="flex items-center gap-1.5">
           <span title={kw.키워드} className="font-medium text-slate-800 max-w-[100px] truncate block">{kw.키워드}</span>
-          {isReachable(kw) && (
+          {kw.키워드 !== '비검색' && isReachable(kw) && (
             <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">도달유지</span>
           )}
         </div>
@@ -304,7 +307,7 @@ function KeywordTable({ rows, initDir, headerText, headerCls }) {
       return <span className="text-xs text-slate-600">{fmtPercent(cvr, 2)}</span>
     }
     if (col.chip) {
-      if (kw.ROAS_14일 === 0 && kw.광고비 > 0 && !isReachable(kw)) {
+      if (kw.키워드 !== '비검색' && kw.ROAS_14일 === 0 && kw.광고비 > 0 && !isReachable(kw)) {
         return (
           <div className="flex flex-col items-start gap-0.5">
             {ROAS_CHIP(kw[col.key])}
@@ -323,15 +326,27 @@ function KeywordTable({ rows, initDir, headerText, headerCls }) {
     <div className="flex-1 min-w-0">
       <div className={`text-xs font-semibold px-3 py-2 rounded-t-lg flex items-center justify-between ${headerCls}`}>
         <span>{headerText}</span>
-        <select
-          value={convWindow}
-          onChange={e => handleWindowChange(e.target.value)}
-          onClick={e => e.stopPropagation()}
-          className="text-[10px] font-normal border border-slate-200/60 rounded px-1.5 py-0.5 bg-white/80 text-slate-600"
-        >
-          <option value="14d">14일 직간접전환</option>
-          <option value="1d">1일 직접전환</option>
-        </select>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setShowNonSearch(v => !v)}
+            className={`text-[10px] font-normal border rounded px-1.5 py-0.5 transition-colors ${
+              showNonSearch
+                ? 'bg-blue-100 border-blue-300 text-blue-700'
+                : 'bg-white/80 border-slate-200/60 text-slate-500 hover:bg-white'
+            }`}
+          >
+            비검색 {showNonSearch ? '숨기기' : '보기'}
+          </button>
+          <select
+            value={convWindow}
+            onChange={e => handleWindowChange(e.target.value)}
+            onClick={e => e.stopPropagation()}
+            className="text-[10px] font-normal border border-slate-200/60 rounded px-1.5 py-0.5 bg-white/80 text-slate-600"
+          >
+            <option value="14d">14일 직간접전환</option>
+            <option value="1d">1일 직접전환</option>
+          </select>
+        </div>
       </div>
       <div className="overflow-x-auto border border-t-0 border-slate-200 rounded-b-lg">
         <table className="w-full text-sm">

@@ -206,7 +206,7 @@ export function generateInsights(data) {
   // ── 비효율 키워드 (광고비 비중 ≥ 5% + ROAS < 100%) ─────────────────────
   const totalKwSpend = keywords.reduce((s, k) => s + k.광고비, 0)
   const badKws = totalKwSpend > 0
-    ? keywords.filter(k => (k.광고비 / totalKwSpend) >= 0.05 && k.ROAS_14일 < 100)
+    ? keywords.filter(k => k.키워드 !== '비검색' && (k.광고비 / totalKwSpend) >= 0.05 && k.ROAS_14일 < 100)
     : []
   if (badKws.length) {
     const top = badKws[0]
@@ -224,7 +224,7 @@ export function generateInsights(data) {
 
   // ── 주의 키워드 (광고비 비중 ≥ 5% + ROAS 100~200%) ─────────────────────
   const warnKws = totalKwSpend > 0
-    ? keywords.filter(k => (k.광고비 / totalKwSpend) >= 0.05 && k.ROAS_14일 >= 100 && k.ROAS_14일 < 200)
+    ? keywords.filter(k => k.키워드 !== '비검색' && (k.광고비 / totalKwSpend) >= 0.05 && k.ROAS_14일 >= 100 && k.ROAS_14일 < 200)
     : []
   if (warnKws.length) {
     const top = warnKws[0]
