@@ -118,14 +118,9 @@ export default function App() {
             )}
 
             {/* 지원 포맷 안내 */}
-            <div className="flex items-center justify-center gap-6 text-xs text-slate-400">
-              {['쿠팡 검색광고', '쿠팡 쇼핑광고', 'CSV / XLSX'].map(tag => (
-                <span key={tag} className="flex items-center gap-1">
-                  <span className="w-1 h-1 rounded-full bg-slate-300" />
-                  {tag}
-                </span>
-              ))}
-            </div>
+            <p className="text-center text-xs text-slate-400">
+              아직은 상품광고(PA)만 지원합니다. 추후 확장 예정입니다.
+            </p>
           </div>
         </main>
       </div>
