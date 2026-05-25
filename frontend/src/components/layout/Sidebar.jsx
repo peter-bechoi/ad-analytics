@@ -28,7 +28,8 @@ const NAV = [
   },
 ]
 
-export default function Sidebar({ activeTab, onTabChange, onReset, onLogout, filename, dateRange }) {
+export default function Sidebar({ activeTab, onTabChange, onReset, onLogout, filename, dateRange, role }) {
+  const visibleNav = role === 'admin' ? NAV : NAV.filter(n => n.id !== 'report')
   return (
     <aside className="w-60 shrink-0 bg-slate-900 flex flex-col h-screen sticky top-0">
       {/* 브랜드 */}
@@ -61,7 +62,7 @@ export default function Sidebar({ activeTab, onTabChange, onReset, onLogout, fil
 
       {/* 네비게이션 */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {NAV.map(item => (
+        {visibleNav.map(item => (
           <button
             key={item.id}
             onClick={() => onTabChange(item.id)}

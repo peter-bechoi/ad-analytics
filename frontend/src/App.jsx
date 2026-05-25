@@ -12,11 +12,14 @@ const PING_INTERVAL_MS = 5 * 60 * 1000 // 5분
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(() => sessionStorage.getItem('auth') === '1')
-  const [view, setView]           = useState('upload') // 'upload' | 'app'
-  const [activeTab, setActiveTab] = useState('dashboard')
+  const [role, setRole]             = useState(() => sessionStorage.getItem('role') ?? 'guest')
+  const [view, setView]             = useState('upload') // 'upload' | 'app'
+  const [activeTab, setActiveTab]   = useState('dashboard')
   const [uploadData, setUploadData] = useState(null)
-  const [loading, setLoading]     = useState(false)
-  const [error, setError]         = useState(null)
+  const [loading, setLoading]       = useState(false)
+  const [error, setError]           = useState(null)
+
+  const isAdmin = role === 'admin'
 
   useEffect(() => {
     pingHealth()
@@ -24,14 +27,18 @@ export default function App() {
     return () => clearInterval(id)
   }, [])
 
-  const handleLogin = () => {
+  const handleLogin = (userRole) => {
     sessionStorage.setItem('auth', '1')
+    sessionStorage.setItem('role', userRole)
+    setRole(userRole)
     setIsLoggedIn(true)
   }
 
   const handleLogout = () => {
     sessionStorage.removeItem('auth')
+    sessionStorage.removeItem('role')
     setIsLoggedIn(false)
+    setRole('guest')
     setView('upload')
     setUploadData(null)
     setError(null)
@@ -68,7 +75,7 @@ export default function App() {
   if (view === 'upload') {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
-        <ChatBot />
+        {isAdmin && <ChatBot />}
         {/* 헤더 */}
         <header className="bg-white border-b border-slate-200 px-8 py-4">
           <div className="flex items-center gap-3">
@@ -137,6 +144,7 @@ export default function App() {
         onLogout={handleLogout}
         filename={uploadData?.filename}
         dateRange={uploadData?.date_range}
+        role={role}
       />
 
       <main className="flex-1 overflow-y-auto min-w-0">
@@ -155,7 +163,7 @@ export default function App() {
         )}
       </main>
 
-      <ChatBot />
+      {isAdmin && <ChatBot />}
     </div>
   )
 }

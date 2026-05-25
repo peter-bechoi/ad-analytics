@@ -1,5 +1,14 @@
 import { useState } from 'react'
 
+const ACCOUNTS = [
+  { id: 'admin',  pw: 'admin1234', role: 'admin' },
+  { id: 'guest1', pw: 'guest1234', role: 'guest' },
+  { id: 'guest2', pw: 'guest1234', role: 'guest' },
+  { id: 'guest3', pw: 'guest1234', role: 'guest' },
+  { id: 'guest4', pw: 'guest1234', role: 'guest' },
+  { id: 'guest5', pw: 'guest1234', role: 'guest' },
+]
+
 export default function LoginPage({ onLogin }) {
   const [id, setId]         = useState('')
   const [pw, setPw]         = useState('')
@@ -12,8 +21,9 @@ export default function LoginPage({ onLogin }) {
     setError('')
 
     setTimeout(() => {
-      if (id === 'admin' && pw === 'admin1234') {
-        onLogin()
+      const account = ACCOUNTS.find(a => a.id === id && a.pw === pw)
+      if (account) {
+        onLogin(account.role)
       } else {
         setError('아이디 또는 비밀번호가 올바르지 않습니다.')
         setLoading(false)
