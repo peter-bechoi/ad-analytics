@@ -241,10 +241,9 @@ function CompareTable({ rows, nameKey, nameLabel, showManualBadge = false, showC
 
 // ─── 키워드 단일 테이블 (정렬 가능 + 도달유지 뱃지) ───────────────────────────
 
-function KeywordTable({ rows, initDir, headerText, headerCls }) {
-  const [sort,          setSort]          = useState({ key: 'ROAS_14일', dir: initDir })
-  const [convWindow,    setConvWindow]    = useState('14d')
-  const [showNonSearch, setShowNonSearch] = useState(false)
+function KeywordTable({ rows, initDir, headerText, headerCls, showNonSearch }) {
+  const [sort,       setSort]       = useState({ key: 'ROAS_14일', dir: initDir })
+  const [convWindow, setConvWindow] = useState('14d')
 
   const is1d     = convWindow === '1d'
   const roasKey  = is1d ? 'ROAS_1일'  : 'ROAS_14일'
@@ -326,27 +325,15 @@ function KeywordTable({ rows, initDir, headerText, headerCls }) {
     <div className="flex-1 min-w-0">
       <div className={`text-xs font-semibold px-3 py-2 rounded-t-lg flex items-center justify-between ${headerCls}`}>
         <span>{headerText}</span>
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setShowNonSearch(v => !v)}
-            className={`text-[10px] font-normal border rounded px-1.5 py-0.5 transition-colors ${
-              showNonSearch
-                ? 'bg-blue-100 border-blue-300 text-blue-700'
-                : 'bg-white/80 border-slate-200/60 text-slate-500 hover:bg-white'
-            }`}
-          >
-            비검색 {showNonSearch ? '숨기기' : '보기'}
-          </button>
-          <select
-            value={convWindow}
-            onChange={e => handleWindowChange(e.target.value)}
-            onClick={e => e.stopPropagation()}
-            className="text-[10px] font-normal border border-slate-200/60 rounded px-1.5 py-0.5 bg-white/80 text-slate-600"
-          >
-            <option value="14d">14일 직간접전환</option>
-            <option value="1d">1일 직접전환</option>
-          </select>
-        </div>
+        <select
+          value={convWindow}
+          onChange={e => handleWindowChange(e.target.value)}
+          onClick={e => e.stopPropagation()}
+          className="text-[10px] font-normal border border-slate-200/60 rounded px-1.5 py-0.5 bg-white/80 text-slate-600"
+        >
+          <option value="14d">14일 직간접전환</option>
+          <option value="1d">1일 직접전환</option>
+        </select>
       </div>
       <div className="overflow-x-auto border border-t-0 border-slate-200 rounded-b-lg">
         <table className="w-full text-sm">
@@ -708,12 +695,146 @@ function BrandCategoryDonut({ keywords, brandTags, onAddTag, onRemoveTag }) {
   )
 }
 
+// ─── 키워드 전환 성과 테이블 (1일 / 14일 탭) ──────────────────────────────────
+
+function KeywordConvTable({ rows }) {
+  const [tab,  setTab]  = useState('14d')
+  const [sort, setSort] = useState({ key: 'ROAS_14일', dir: 'desc' })
+  const [page, setPage] = useState(0)
+
+  useEffect(() => { setPage(0) }, [rows])
+
+  const handleTabChange = (t) => {
+    setTab(t)
+    setSort({ key: t === '14d' ? 'ROAS_14일' : 'ROAS_1일', dir: 'desc' })
+    setPage(0)
+  }
+
+  const handleSort = useCallback((key) => {
+    setSort(s => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }))
+    setPage(0)
+  }, [])
+
+  const is1d       = tab === '1d'
+  const salesKey   = is1d ? '매출_1일'      : '매출_14일'
+  const salesLabel = is1d ? '직접매출(1일)' : '총전환매출(14일)'
+  const roasKey    = is1d ? 'ROAS_1일'      : 'ROAS_14일'
+  const roasLabel  = is1d ? 'ROAS(1일)'     : 'ROAS(14일)'
+  const orderKey   = is1d ? '주문수_1일'    : '주문수_14일'
+  const orderLabel = is1d ? '주문수(1일)'   : '주문수(14일)'
+
+  const comparator = useCallback((a, b) => {
+    const av = a[sort.key] ?? 0, bv = b[sort.key] ?? 0
+    return sort.dir === 'desc' ? bv - av : av - bv
+  }, [sort.key, sort.dir])
+
+  const sortedAll  = useMemo(() => [...rows].sort(comparator), [rows, comparator])
+  const totalPages = Math.max(1, Math.ceil(sortedAll.length / PAGE_SIZE))
+  const sorted     = sortedAll.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
+  const arrow = (key) => sort.key === key ? (sort.dir === 'desc' ? ' ↓' : ' ↑') : ''
+
+  const COLS = [
+    ['광고비',  '광고비'],
+    [salesKey,  salesLabel],
+    [roasKey,   roasLabel],
+    ['노출수',  '노출수'],
+    ['클릭수',  '클릭수'],
+    ['CPC',     'CPC'],
+    [orderKey,  orderLabel],
+  ]
+
+  return (
+    <div>
+      {/* 탭 */}
+      <div className="flex border-b border-slate-200 px-1">
+        {[['14d', '14일 간접전환'], ['1d', '1일 직접전환']].map(([t, label]) => (
+          <button
+            key={t}
+            onClick={() => handleTabChange(t)}
+            className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              tab === t
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* 테이블 */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-200">
+              <ResizableTh
+                defaultWidth={160}
+                onClick={() => handleSort('키워드')}
+                className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer hover:text-slate-800 whitespace-nowrap"
+              >
+                키워드{arrow('키워드')}
+              </ResizableTh>
+              {COLS.map(([key, label]) => (
+                <th
+                  key={key}
+                  onClick={() => handleSort(key)}
+                  className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer hover:text-slate-800 select-none whitespace-nowrap"
+                >
+                  {label}{arrow(key)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((r, i) => (
+              <tr key={i} className="border-b border-slate-100 hover:bg-slate-50/70 transition-colors">
+                <td className="px-3 py-2.5 font-medium text-slate-800 max-w-[160px]">
+                  <span title={r.키워드} className="truncate block">{r.키워드}</span>
+                </td>
+                <td className="px-3 py-2.5 text-slate-600">{fmtWon(r.광고비)}</td>
+                <td className="px-3 py-2.5 font-semibold text-slate-800">{fmtWon(r[salesKey])}</td>
+                <td className="px-3 py-2.5">{ROAS_CHIP(r[roasKey] ?? 0)}</td>
+                <td className="px-3 py-2.5 text-slate-600">{fmtNumber(r.노출수)}</td>
+                <td className="px-3 py-2.5 text-slate-600">{fmtNumber(r.클릭수)}</td>
+                <td className="px-3 py-2.5 text-slate-600">{fmtWon(r.CPC)}</td>
+                <td className="px-3 py-2.5 text-slate-600">{fmtNumber(r[orderKey])}</td>
+              </tr>
+            ))}
+            {!sorted.length && (
+              <tr><td colSpan={8} className="px-3 py-10 text-center text-slate-400 text-sm">데이터 없음</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 페이지네이션 */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
+          <span className="text-xs text-slate-400">
+            총 {rows.length}개 중 {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, rows.length)}번째
+          </span>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setPage(p => p - 1)} disabled={page === 0}
+              className="px-2.5 py-1 text-xs rounded-md border border-slate-200 text-slate-600 disabled:opacity-30 hover:bg-slate-50 transition-colors">이전</button>
+            <span className="text-xs text-slate-600 font-medium px-2.5">{page + 1} / {totalPages}</span>
+            <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages - 1}
+              className="px-2.5 py-1 text-xs rounded-md border border-slate-200 text-slate-600 disabled:opacity-30 hover:bg-slate-50 transition-colors">다음</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── 키워드 섹션 ─────────────────────────────────────────────────────────────
 
 const LS_BRAND_KEY = 'ad_analytics_brand_tags'
 
 function KeywordSection({ keywords, isAll, data }) {
   const displayKeywords = isAll ? keywords.slice(0, 100) : keywords
+
+  const [showNonSearch, setShowNonSearch] = useState(false)
 
   const [brandTags, setBrandTags] = useState(() => {
     try { return JSON.parse(localStorage.getItem(LS_BRAND_KEY)) ?? [] } catch { return [] }
@@ -765,13 +886,21 @@ function KeywordSection({ keywords, isAll, data }) {
 
   const isKwReachable = useCallback(kw => (kw.노출수 ?? 0) >= reachThreshold && kw.ROAS_14일 < 200, [reachThreshold])
 
+  // 비검색 토글에 따라 고효율/저효율 소스 변경
+  const effSource = useMemo(
+    () => showNonSearch
+      ? displayKeywords.filter(k => k.광고비 > 0)
+      : realKws,
+    [showNonSearch, displayKeywords, realKws]
+  )
+
   const highEff = useMemo(
-    () => realKws.filter(k => k.ROAS_14일 > 300 && k.광고비 < avgSpend).sort((a, b) => b.ROAS_14일 - a.ROAS_14일),
-    [realKws, avgSpend]
+    () => effSource.filter(k => k.ROAS_14일 > 300 && k.광고비 < avgSpend).sort((a, b) => b.ROAS_14일 - a.ROAS_14일),
+    [effSource, avgSpend]
   )
   const lowEff = useMemo(
-    () => realKws.filter(k => k.광고비 > 0 && k.매출_14일 === 0 && !isKwReachable(k)).sort((a, b) => b.광고비 - a.광고비),
-    [realKws, isKwReachable]
+    () => effSource.filter(k => k.광고비 > 0 && k.매출_14일 === 0 && !isKwReachable(k)).sort((a, b) => b.광고비 - a.광고비),
+    [effSource, isKwReachable]
   )
 
   const categoryRevenue = useMemo(
@@ -835,6 +964,21 @@ function KeywordSection({ keywords, isAll, data }) {
         />
       </div>
 
+      {/* 고효율 / 저효율 / 상위 / 하위 — 비검색 공통 토글 */}
+      <div className="flex items-center justify-end">
+        <button
+          onClick={() => setShowNonSearch(v => !v)}
+          className={`flex items-center gap-1.5 text-xs font-medium border rounded-lg px-3 py-1.5 transition-colors ${
+            showNonSearch
+              ? 'bg-blue-50 border-blue-300 text-blue-700'
+              : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'
+          }`}
+        >
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${showNonSearch ? 'bg-blue-500' : 'bg-slate-300'}`} />
+          비검색 {showNonSearch ? '표시 중' : '숨김'}
+        </button>
+      </div>
+
       {/* 고효율 / 저효율 테이블 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <HighEffKeywordTable keywords={highEff} />
@@ -846,8 +990,8 @@ function KeywordSection({ keywords, isAll, data }) {
 
       {/* 상위 / 하위 ROAS 비교 */}
       <div className="flex gap-4">
-        <KeywordTable rows={byDesc} initDir="desc" headerText="▲ 상위 키워드 (ROAS 높은 순)" headerCls="bg-emerald-50 text-emerald-700" />
-        <KeywordTable rows={byAsc}  initDir="asc"  headerText="▼ 하위 키워드 (ROAS 낮은 순)" headerCls="bg-red-50 text-red-700" />
+        <KeywordTable rows={byDesc} initDir="desc" headerText="▲ 상위 키워드 (ROAS 높은 순)" headerCls="bg-emerald-50 text-emerald-700" showNonSearch={showNonSearch} />
+        <KeywordTable rows={byAsc}  initDir="asc"  headerText="▼ 하위 키워드 (ROAS 낮은 순)" headerCls="bg-red-50 text-red-700" showNonSearch={showNonSearch} />
       </div>
     </div>
   )
@@ -1623,13 +1767,15 @@ export default function InsightsPage({ data }) {
                   {DIMS.find(d => d.id === dim)?.label} 기준{!isAll && ` · ${selectedCampaign}`}
                 </p>
               </div>
-              <CompareTable
-                rows={dimRows}
-                nameKey={dimNameKey[dim]}
-                nameLabel={dimNameLabel[dim]}
-                showManualBadge={dim === 'campaign'}
-                showCpc={dim === 'keyword'}
-              />
+              {dim === 'keyword'
+              ? <KeywordConvTable rows={dimRows} />
+              : <CompareTable
+                  rows={dimRows}
+                  nameKey={dimNameKey[dim]}
+                  nameLabel={dimNameLabel[dim]}
+                  showManualBadge={dim === 'campaign'}
+                />
+            }
             </div>
           )}
 
