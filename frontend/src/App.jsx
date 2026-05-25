@@ -5,6 +5,7 @@ import DashboardPage from './pages/DashboardPage'
 import InsightsPage from './pages/InsightsPage'
 import ReportPage from './pages/ReportPage'
 import LoginPage from './pages/LoginPage'
+import ChatBot from './components/ChatBot'
 import { uploadFile, pingHealth } from './api/client'
 
 const PING_INTERVAL_MS = 5 * 60 * 1000 // 5분
@@ -67,6 +68,7 @@ export default function App() {
   if (view === 'upload') {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
+        <ChatBot />
         {/* 헤더 */}
         <header className="bg-white border-b border-slate-200 px-8 py-4">
           <div className="flex items-center gap-3">
@@ -152,6 +154,8 @@ export default function App() {
           />
         )}
       </main>
+
+      <ChatBot />
     </div>
   )
 }
