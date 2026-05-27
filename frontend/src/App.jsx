@@ -10,6 +10,64 @@ import { uploadFile, pingHealth } from './api/client'
 
 const PING_INTERVAL_MS = 5 * 60 * 1000 // 5분
 
+// ─── 전역 기준 토글 헤더 ──────────────────────────────────────────────────────
+
+function GlobalConvHeader({ convConfig, onChange }) {
+  const periodLabel  = convConfig.period  === '1d'     ? '1일'    : '14일'
+  const convLabel    = convConfig.convType === 'direct' ? '직접전환' : '총전환'
+
+  return (
+    <div className="bg-white border-b border-slate-200 px-6 py-2 flex items-center justify-end gap-3 shrink-0">
+      <span className="text-xs text-slate-400 mr-1">
+        현재 기준:&nbsp;
+        <span className="font-semibold text-slate-600">{periodLabel} · {convLabel}</span>
+      </span>
+
+      {/* 기간 토글 */}
+      <div className="flex items-center gap-1">
+        <span className="text-[11px] text-slate-400 font-medium mr-1">기간</span>
+        <div className="flex gap-0.5 p-0.5 bg-slate-100 rounded-lg">
+          {[['1d', '1일'], ['14d', '14일']].map(([val, lbl]) => (
+            <button
+              key={val}
+              onClick={() => onChange({ ...convConfig, period: val })}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                convConfig.period === val
+                  ? 'bg-white text-slate-800 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {lbl}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="w-px h-4 bg-slate-200" />
+
+      {/* 전환유형 토글 */}
+      <div className="flex items-center gap-1">
+        <span className="text-[11px] text-slate-400 font-medium mr-1">전환유형</span>
+        <div className="flex gap-0.5 p-0.5 bg-slate-100 rounded-lg">
+          {[['direct', '직접전환'], ['total', '총전환']].map(([val, lbl]) => (
+            <button
+              key={val}
+              onClick={() => onChange({ ...convConfig, convType: val })}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                convConfig.convType === val
+                  ? 'bg-white text-slate-800 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {lbl}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(() => sessionStorage.getItem('auth') === '1')
   const [role, setRole]             = useState(() => sessionStorage.getItem('role') ?? 'guest')
@@ -18,6 +76,9 @@ export default function App() {
   const [uploadData, setUploadData] = useState(null)
   const [loading, setLoading]       = useState(false)
   const [error, setError]           = useState(null)
+
+  // ── 전역 기준: 기간(1d/14d) + 전환유형(direct/total) ──
+  const [convConfig, setConvConfig] = useState({ period: '14d', convType: 'total' })
 
   const isAdmin = role === 'admin'
 
@@ -142,21 +203,26 @@ export default function App() {
         role={role}
       />
 
-      <main className="flex-1 overflow-y-auto min-w-0">
-        {activeTab === 'dashboard' && (
-          <DashboardPage data={rows} dateRange={uploadData?.date_range} />
-        )}
-        {activeTab === 'insights' && (
-          <InsightsPage data={rows} />
-        )}
-        {activeTab === 'report' && (
-          <ReportPage
-            data={rows}
-            dateRange={uploadData?.date_range}
-            filename={uploadData?.filename}
-          />
-        )}
-      </main>
+      {/* 우측 영역: 전역 헤더 + 메인 컨텐츠 */}
+      <div className="flex flex-col flex-1 overflow-hidden min-w-0">
+        <GlobalConvHeader convConfig={convConfig} onChange={setConvConfig} />
+
+        <main className="flex-1 overflow-y-auto min-w-0">
+          {activeTab === 'dashboard' && (
+            <DashboardPage data={rows} dateRange={uploadData?.date_range} convConfig={convConfig} />
+          )}
+          {activeTab === 'insights' && (
+            <InsightsPage data={rows} convConfig={convConfig} />
+          )}
+          {activeTab === 'report' && (
+            <ReportPage
+              data={rows}
+              dateRange={uploadData?.date_range}
+              filename={uploadData?.filename}
+            />
+          )}
+        </main>
+      </div>
 
       {isAdmin && <ChatBot />}
     </div>

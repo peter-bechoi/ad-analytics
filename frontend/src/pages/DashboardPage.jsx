@@ -5,7 +5,7 @@ import TrendChart from '../components/TrendChart'
 import {
   filterData, aggregateKpis, splitByPeriod, pctChange,
   groupByDate, groupByCampaign, groupByPlacement, groupByProduct,
-  getUnique, generateInsights,
+  getUnique, generateInsights, getSalesCol,
 } from '../utils/dataHelpers'
 import { fmtNumber, fmtWon, fmtPercent } from '../utils/format'
 
@@ -290,34 +290,37 @@ function AiInsightPanel({ insights }) {
 
 // ─── 메인 DashboardPage ───────────────────────────────────────────────────────
 
-export default function DashboardPage({ data, dateRange }) {
+export default function DashboardPage({ data, dateRange, convConfig = { period: '14d', convType: 'total' } }) {
   const [filters, setFilters] = useState({ campaigns: [], products: [], placements: [], compareMode: 'none', dateStart: null, dateEnd: null })
   const [tableTab, setTableTab] = useState('product')
 
   const filtered = useMemo(() => filterData(data, filters), [data, filters])
 
-  const kpis = useMemo(() => aggregateKpis(filtered), [filtered])
+  const kpis = useMemo(() => aggregateKpis(filtered, convConfig), [filtered, convConfig])
   const comparison = useMemo(
-    () => filters.compareMode === 'none' ? null : splitByPeriod(filtered, filters.compareMode === '7d' ? 7 : 14),
-    [filtered, filters.compareMode]
+    () => filters.compareMode === 'none' ? null : splitByPeriod(filtered, filters.compareMode === '7d' ? 7 : 14, convConfig),
+    [filtered, filters.compareMode, convConfig]
   )
   const cmp = (key) => comparison ? pctChange(kpis[key], comparison.previous[key]) : null
 
-  const dailyData    = useMemo(() => groupByDate(filtered), [filtered])
-  const campaigns    = useMemo(() => groupByCampaign(filtered), [filtered])
+  const dailyData    = useMemo(() => groupByDate(filtered, convConfig.convType), [filtered, convConfig.convType])
+  const campaigns    = useMemo(() => groupByCampaign(filtered, convConfig.convType), [filtered, convConfig.convType])
   const placements   = useMemo(() => groupByPlacement(filtered), [filtered])
-  const products     = useMemo(() => groupByProduct(filtered), [filtered])
-  const insights     = useMemo(() => generateInsights(filtered), [filtered])
+  const products     = useMemo(() => groupByProduct(filtered, convConfig.convType), [filtered, convConfig.convType])
+  const insights     = useMemo(() => generateInsights(filtered, convConfig.convType), [filtered, convConfig.convType])
+
+  const periodLabel = convConfig.period === '1d' ? '1일' : '14일'
+  const convLabel   = convConfig.convType === 'direct' ? '직접전환' : '총전환'
 
   const KPI_CARDS = [
-    { label: '총 광고비',       value: fmtWon(kpis.광고비),        key: '광고비',        color: 'blue',    invertTrend: true },
-    { label: '전환매출 (14일)', value: fmtWon(kpis.매출_14일),     key: '매출_14일',     color: 'indigo' },
-    { label: 'ROAS',            value: fmtPercent(kpis.ROAS, 0),   key: 'ROAS',          color: 'violet' },
-    { label: '클릭수',          value: fmtNumber(kpis.클릭수),     key: '클릭수',        color: 'sky' },
-    { label: '주문수 (14일)',   value: fmtNumber(kpis.주문수_14일), key: '주문수_14일',   color: 'emerald' },
-    { label: 'CTR',             value: fmtPercent(kpis.CTR, 2),    key: 'CTR',           color: 'teal' },
-    { label: 'CPC',             value: fmtWon(kpis.CPC),           key: 'CPC',           color: 'amber', invertTrend: true },
-    { label: 'CVR',             value: fmtPercent(kpis.CVR, 2),    key: 'CVR',           color: 'rose' },
+    { label: '총 광고비',                            value: fmtWon(kpis.광고비),        key: '광고비',        color: 'blue',    invertTrend: true },
+    { label: `전환매출 (${periodLabel}·${convLabel})`, value: fmtWon(kpis.매출_14일),   key: '매출_14일',     color: 'indigo' },
+    { label: 'ROAS',                                 value: fmtPercent(kpis.ROAS, 0),   key: 'ROAS',          color: 'violet' },
+    { label: '클릭수',                               value: fmtNumber(kpis.클릭수),     key: '클릭수',        color: 'sky' },
+    { label: `주문수 (${periodLabel})`,              value: fmtNumber(kpis.주문수_14일), key: '주문수_14일',   color: 'emerald' },
+    { label: 'CTR',                                  value: fmtPercent(kpis.CTR, 2),    key: 'CTR',           color: 'teal' },
+    { label: 'CPC',                                  value: fmtWon(kpis.CPC),           key: 'CPC',           color: 'amber', invertTrend: true },
+    { label: 'CVR',                                  value: fmtPercent(kpis.CVR, 2),    key: 'CVR',           color: 'rose' },
   ]
 
   const productCols = [

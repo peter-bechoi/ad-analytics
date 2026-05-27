@@ -5,6 +5,19 @@ export const getUnique = (data, field) =>
 
 export const isManualCampaign = (name = '') => /수동/.test(name)
 
+// ─── 전역 전환 기준 컬럼 매핑 ─────────────────────────────────────────────────
+// period: '1d' | '14d', convType: 'direct' | 'total'
+export function getSalesCol(period = '14d', convType = 'total') {
+  if (period === '1d'  && convType === 'direct') return '광고를 통한 직접 전환매출액(1일)'
+  if (period === '1d')                           return '총 전환매출액(1일)'
+  if (period === '14d' && convType === 'direct') return '광고를 통한 직접 전환매출액(14일)'
+  return '총 전환매출액(14일)'
+}
+
+export function getOrderCol(period = '14d') {
+  return period === '1d' ? '총 주문수(1일)' : '총 주문수(14일)'
+}
+
 export function filterData(data, filters) {
   return data.filter(r => {
     if (filters.campaigns?.length && !filters.campaigns.includes(r['캠페인명'])) return false
@@ -16,16 +29,19 @@ export function filterData(data, filters) {
   })
 }
 
-export function aggregateKpis(rows) {
+// convConfig = { period: '14d', convType: 'total' } or null (backward compat → 14d total)
+export function aggregateKpis(rows, convConfig = null) {
+  const salesCol = convConfig ? getSalesCol(convConfig.period, convConfig.convType) : '총 전환매출액(14일)'
+  const orderCol = convConfig ? getOrderCol(convConfig.period) : '총 주문수(14일)'
   let imp = 0, clk = 0, cost = 0, ord1 = 0, ord14 = 0, rev1 = 0, rev14 = 0
   for (const r of rows) {
     imp   += r['노출수'] ?? 0
     clk   += r['클릭수'] ?? 0
     cost  += r['광고비'] ?? 0
     ord1  += r['총 주문수(1일)'] ?? 0
-    ord14 += r['총 주문수(14일)'] ?? 0
+    ord14 += r[orderCol] ?? 0
     rev1  += r['총 전환매출액(1일)'] ?? 0
-    rev14 += r['총 전환매출액(14일)'] ?? 0
+    rev14 += r[salesCol] ?? 0
   }
   return {
     노출수: imp, 클릭수: clk, 광고비: cost,
@@ -38,15 +54,15 @@ export function aggregateKpis(rows) {
   }
 }
 
-export function splitByPeriod(data, days) {
+export function splitByPeriod(data, days, convConfig = null) {
   const dates = [...new Set(data.map(r => r['날짜']).filter(Boolean))].sort()
   if (dates.length < days + 1) return null
   const current  = new Set(dates.slice(-days))
   const previous = new Set(dates.slice(-days * 2, -days))
   if (!previous.size) return null
   return {
-    current:  aggregateKpis(data.filter(r => current.has(r['날짜']))),
-    previous: aggregateKpis(data.filter(r => previous.has(r['날짜']))),
+    current:  aggregateKpis(data.filter(r => current.has(r['날짜'])),  convConfig),
+    previous: aggregateKpis(data.filter(r => previous.has(r['날짜'])), convConfig),
   }
 }
 
@@ -55,7 +71,8 @@ export const pctChange = (curr, prev) =>
 
 // ─── 그룹 집계 ───────────────────────────────────────────────────────────────
 
-export function groupByDate(data) {
+export function groupByDate(data, convType = 'total') {
+  const sales14Col = getSalesCol('14d', convType)
   const m = {}
   for (const r of data) {
     const d = r['날짜']; if (!d) continue
@@ -63,7 +80,7 @@ export function groupByDate(data) {
     m[d].노출수      += r['노출수'] ?? 0
     m[d].클릭수      += r['클릭수'] ?? 0
     m[d].광고비      += r['광고비'] ?? 0
-    m[d].매출_14일   += r['총 전환매출액(14일)'] ?? 0
+    m[d].매출_14일   += r[sales14Col] ?? 0
     m[d].주문수_14일 += r['총 주문수(14일)'] ?? 0
   }
   return Object.values(m)
@@ -74,18 +91,20 @@ export function groupByDate(data) {
     }))
 }
 
-export function groupByCampaign(data) {
+export function groupByCampaign(data, convType = 'total') {
+  const sales1Col  = getSalesCol('1d',  convType)
+  const sales14Col = getSalesCol('14d', convType)
   const m = {}
   for (const r of data) {
     const k = r['캠페인명'] ?? '(미지정)'
     if (!m[k]) m[k] = { 캠페인명: k, 광고비: 0, 매출_1일: 0, 매출_14일: 0, 클릭수: 0, 주문수_1일: 0, 주문수_14일: 0, 노출수: 0 }
-    m[k].광고비     += r['광고비'] ?? 0
-    m[k].매출_1일   += r['총 전환매출액(1일)'] ?? 0
-    m[k].매출_14일  += r['총 전환매출액(14일)'] ?? 0
-    m[k].클릭수     += r['클릭수'] ?? 0
-    m[k].주문수_1일 += r['총 주문수(1일)'] ?? 0
+    m[k].광고비      += r['광고비'] ?? 0
+    m[k].매출_1일    += r[sales1Col] ?? 0
+    m[k].매출_14일   += r[sales14Col] ?? 0
+    m[k].클릭수      += r['클릭수'] ?? 0
+    m[k].주문수_1일  += r['총 주문수(1일)'] ?? 0
     m[k].주문수_14일 += r['총 주문수(14일)'] ?? 0
-    m[k].노출수     += r['노출수'] ?? 0
+    m[k].노출수      += r['노출수'] ?? 0
   }
   return Object.values(m).map(c => ({
     ...c,
@@ -97,17 +116,18 @@ export function groupByCampaign(data) {
   })).sort((a, b) => b.ROAS_14일 - a.ROAS_14일)
 }
 
-export function groupByProduct(data) {
+export function groupByProduct(data, convType = 'total') {
+  const sales14Col = getSalesCol('14d', convType)
   const m = {}
   for (const r of data) {
     const k = r['광고집행 상품명'] ?? '(미지정)'
     if (!m[k]) m[k] = { 상품명: k, 캠페인명: r['캠페인명'] ?? '', 광고비: 0, 매출_1일: 0, 매출_14일: 0, 주문수_1일: 0, 주문수_14일: 0, 클릭수: 0 }
-    m[k].광고비     += r['광고비'] ?? 0
-    m[k].매출_1일   += r['총 전환매출액(1일)'] ?? 0
-    m[k].매출_14일  += r['총 전환매출액(14일)'] ?? 0
-    m[k].주문수_1일 += r['총 주문수(1일)'] ?? 0
+    m[k].광고비      += r['광고비'] ?? 0
+    m[k].매출_1일    += r['총 전환매출액(1일)'] ?? 0
+    m[k].매출_14일   += r[sales14Col] ?? 0
+    m[k].주문수_1일  += r['총 주문수(1일)'] ?? 0
     m[k].주문수_14일 += r['총 주문수(14일)'] ?? 0
-    m[k].클릭수     += r['클릭수'] ?? 0
+    m[k].클릭수      += r['클릭수'] ?? 0
   }
   return Object.values(m).map(p => ({
     ...p,
@@ -117,18 +137,20 @@ export function groupByProduct(data) {
   })).sort((a, b) => b.매출_14일 - a.매출_14일)
 }
 
-export function groupByKeyword(data) {
+export function groupByKeyword(data, convType = 'total') {
+  const sales1Col  = getSalesCol('1d',  convType)
+  const sales14Col = getSalesCol('14d', convType)
   const m = {}
   for (const r of data) {
     const raw = r['키워드']
     const k = (!raw || raw === '-') ? '비검색' : raw
     if (!m[k]) m[k] = { 키워드: k, 캠페인명: r['캠페인명'] ?? '', 광고비: 0, 매출_1일: 0, 매출_14일: 0, 클릭수: 0, 노출수: 0, 주문수_1일: 0, 주문수_14일: 0 }
-    m[k].광고비     += r['광고비'] ?? 0
-    m[k].매출_1일   += r['총 전환매출액(1일)'] ?? 0
-    m[k].매출_14일  += r['총 전환매출액(14일)'] ?? 0
-    m[k].클릭수     += r['클릭수'] ?? 0
-    m[k].노출수     += r['노출수'] ?? 0
-    m[k].주문수_1일 += r['총 주문수(1일)'] ?? 0
+    m[k].광고비      += r['광고비'] ?? 0
+    m[k].매출_1일    += r[sales1Col] ?? 0
+    m[k].매출_14일   += r[sales14Col] ?? 0
+    m[k].클릭수      += r['클릭수'] ?? 0
+    m[k].노출수      += r['노출수'] ?? 0
+    m[k].주문수_1일  += r['총 주문수(1일)'] ?? 0
     m[k].주문수_14일 += r['총 주문수(14일)'] ?? 0
   }
   return Object.values(m).map(kw => ({
@@ -145,11 +167,11 @@ export function groupByPlacement(data) {
   for (const r of data) {
     const k = r['광고 노출 지면'] ?? '(미지정)'
     if (!m[k]) m[k] = { 지면: k, 광고비: 0, 매출_14일: 0, 클릭수: 0, 주문수_14일: 0, 노출수: 0 }
-    m[k].광고비     += r['광고비'] ?? 0
-    m[k].매출_14일  += r['총 전환매출액(14일)'] ?? 0
-    m[k].클릭수     += r['클릭수'] ?? 0
+    m[k].광고비      += r['광고비'] ?? 0
+    m[k].매출_14일   += r['총 전환매출액(14일)'] ?? 0
+    m[k].클릭수      += r['클릭수'] ?? 0
     m[k].주문수_14일 += r['총 주문수(14일)'] ?? 0
-    m[k].노출수     += r['노출수'] ?? 0
+    m[k].노출수      += r['노출수'] ?? 0
   }
   return Object.values(m).map(p => ({
     ...p,
@@ -160,9 +182,9 @@ export function groupByPlacement(data) {
 
 // ─── AI 인사이트 (규칙 기반) ──────────────────────────────────────────────────
 
-export function generateInsights(data) {
-  const campaigns  = groupByCampaign(data)
-  const keywords   = groupByKeyword(data)
+export function generateInsights(data, convType = 'total') {
+  const campaigns  = groupByCampaign(data, convType)
+  const keywords   = groupByKeyword(data, convType)
   const totalSpend = campaigns.reduce((s, c) => s + c.광고비, 0)
   const avgRoas    = campaigns.length ? campaigns.reduce((s, c) => s + c.ROAS_14일, 0) / campaigns.length : 0
   const insights   = []
@@ -373,7 +395,8 @@ export function extractBundleCount(raw = '') {
   return 1
 }
 
-export function groupByNormalizedProduct(data) {
+export function groupByNormalizedProduct(data, convType = 'total') {
+  const sales14Col = getSalesCol('14d', convType)
   const m = {}
   for (const r of data) {
     const raw = r['광고집행 상품명'] ?? '(미지정)'
@@ -387,13 +410,13 @@ export function groupByNormalizedProduct(data) {
     const g = m[norm]
     g.광고비      += r['광고비'] ?? 0
     g.매출_1일    += r['총 전환매출액(1일)'] ?? 0
-    g.매출_14일   += r['총 전환매출액(14일)'] ?? 0
+    g.매출_14일   += r[sales14Col] ?? 0
     g.주문수_1일  += r['총 주문수(1일)'] ?? 0
     g.주문수_14일 += r['총 주문수(14일)'] ?? 0
     g.클릭수      += r['클릭수'] ?? 0
     if (!g.bundles[bundle]) g.bundles[bundle] = { 광고비: 0, 매출_14일: 0, optionIds: new Set() }
     g.bundles[bundle].광고비    += r['광고비'] ?? 0
-    g.bundles[bundle].매출_14일 += r['총 전환매출액(14일)'] ?? 0
+    g.bundles[bundle].매출_14일 += r[sales14Col] ?? 0
     if (optId && optId !== 'nan') g.bundles[bundle].optionIds.add(optId)
   }
   return Object.values(m).map(p => {

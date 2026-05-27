@@ -9,6 +9,7 @@ import {
   aggregateKpis, generateInsights,
   groupByNormalizedProduct,
   extractProductTokens, classifyKeyword,
+  getSalesCol,
 } from '../utils/dataHelpers'
 import { fmtNumber, fmtWon, fmtPercent } from '../utils/format'
 
@@ -1226,9 +1227,11 @@ function ProductTab({ selectedCampaign, onCopy }) {
 
 const ROAS_BAR_COLOR = r => r >= 400 ? '#10B981' : r >= 200 ? '#2563EB' : r >= 100 ? '#F59E0B' : '#EF4444'
 
-function NormalizedProductSection({ data, onCopy }) {
-  const products = useMemo(() => groupByNormalizedProduct(data), [data])
+function NormalizedProductSection({ data, onCopy, convConfig }) {
+  const convType = convConfig?.convType ?? 'total'
+  const products = useMemo(() => groupByNormalizedProduct(data, convType), [data, convType])
   const [expandedRows, setExpandedRows] = useState(new Set())
+  const [bundleView, setBundleView]     = useState('ROAS') // 'ROAS' | 'revenue'
 
   const warnProducts = useMemo(
     () => products.filter(p => p.hasZeroRevenue).slice(0, 6),
@@ -1283,25 +1286,71 @@ function NormalizedProductSection({ data, onCopy }) {
       {/* 구성별 ROAS 비교 차트 */}
       {bundleProducts.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <h3 className="text-sm font-semibold text-slate-800 mb-1">구성별 ROAS 비교</h3>
-          <p className="text-xs text-slate-400 mb-5">동일 상품의 구성(1개/2개/3개/6개)별 ROAS 비교 · 14일 기준</p>
-          <div className="space-y-5">
+          {/* 헤더 + 보기 전환 토글 */}
+          <div className="flex items-start justify-between mb-1">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">구성별 ROAS 비교</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                동일 상품의 구성(1개/2개/3개/6개)별 비교 · 14일 기준
+              </p>
+            </div>
+            {/* 보기 전환 토글 */}
+            <div className="flex gap-0.5 p-0.5 bg-slate-100 rounded-lg shrink-0 ml-4">
+              {[['ROAS', 'ROAS'], ['revenue', '전환매출액']].map(([val, lbl]) => (
+                <button
+                  key={val}
+                  onClick={() => setBundleView(val)}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    bundleView === val
+                      ? 'bg-white text-slate-800 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-5 mt-4">
             {bundleProducts.map((p, i) => {
-              const chartData = Object.entries(p.bundleRoas)
-                .map(([label, roas]) => ({ label, ROAS: roas }))
+              const isRevMode = bundleView === 'revenue'
+
+              // ROAS 모드: bundleRoas 사용
+              // 전환매출액 모드: bundleDetails 에서 매출_14일 추출
+              const chartData = Object.entries(p.bundleDetails)
+                .map(([label, detail]) => ({
+                  label,
+                  ROAS: detail.ROAS,
+                  revenue: detail.매출_14일,
+                }))
                 .sort((a, b) => parseInt(a.label) - parseInt(b.label))
+
+              const dataKey  = isRevMode ? 'revenue' : 'ROAS'
+              const xFmt     = isRevMode
+                ? v => `${Math.round(v / 10000)}만`
+                : v => `${v}%`
+              const labelFmt = isRevMode
+                ? v => v >= 10000 ? `${Math.round(v / 10000)}만원` : `${v.toLocaleString()}원`
+                : v => `${v.toLocaleString()}%`
+              const tooltipFmt = isRevMode
+                ? v => [`${Math.round(v).toLocaleString()}원`, '전환매출액']
+                : v => [`${v.toLocaleString()}%`, 'ROAS']
+              // 색상은 ROAS 기준 유지 (0/낮음 = 빨간색)
+              const barColor = (entry) => ROAS_BAR_COLOR(entry.ROAS)
+
               return (
                 <div key={i}>
                   <p className="text-xs font-semibold text-slate-700 mb-2 truncate">{p.상품명}</p>
                   <div style={{ height: 72 }}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 56, left: 0, bottom: 0 }}>
+                      <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 72, left: 0, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" horizontal={false} />
-                        <XAxis type="number" tick={{ fontSize: 10, fill: '#94A3B8' }} tickFormatter={v => `${v}%`} axisLine={false} tickLine={false} />
+                        <XAxis type="number" tick={{ fontSize: 10, fill: '#94A3B8' }} tickFormatter={xFmt} axisLine={false} tickLine={false} />
                         <YAxis type="category" dataKey="label" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} width={30} />
-                        <ChartTooltip formatter={v => [`${v.toLocaleString()}%`, 'ROAS']} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E2E8F0' }} />
-                        <Bar dataKey="ROAS" radius={[0, 3, 3, 0]} maxBarSize={14} label={{ position: 'right', fontSize: 10, fill: '#64748B', formatter: v => `${v.toLocaleString()}%` }}>
-                          {chartData.map((e, j) => <Cell key={j} fill={ROAS_BAR_COLOR(e.ROAS)} />)}
+                        <ChartTooltip formatter={tooltipFmt} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #E2E8F0' }} />
+                        <Bar dataKey={dataKey} radius={[0, 3, 3, 0]} maxBarSize={14} label={{ position: 'right', fontSize: 10, fill: '#64748B', formatter: labelFmt }}>
+                          {chartData.map((e, j) => <Cell key={j} fill={barColor(e)} />)}
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
@@ -1571,10 +1620,10 @@ function AnomalyCards({ insights }) {
 
 // ─── AI 플레이북 ──────────────────────────────────────────────────────────────
 
-function PlaybookPanel({ filteredData, campaignLabel, allData }) {
-  const kpis      = useMemo(() => aggregateKpis(filteredData), [filteredData])
-  const allKpis   = useMemo(() => aggregateKpis(allData ?? filteredData), [allData, filteredData])
-  const campaigns = useMemo(() => groupByCampaign(filteredData), [filteredData])
+function PlaybookPanel({ filteredData, campaignLabel, allData, convConfig }) {
+  const kpis      = useMemo(() => aggregateKpis(filteredData, convConfig), [filteredData, convConfig])
+  const allKpis   = useMemo(() => aggregateKpis(allData ?? filteredData, convConfig), [allData, filteredData, convConfig])
+  const campaigns = useMemo(() => groupByCampaign(filteredData, convConfig?.convType), [filteredData, convConfig])
   const [copied, setCopied] = useState(false)
 
   const top    = campaigns[0]
@@ -1621,6 +1670,163 @@ function PlaybookPanel({ filteredData, campaignLabel, allData }) {
   )
 }
 
+// ─── 구매전환 키워드 TOP 10 ───────────────────────────────────────────────────
+
+function ProductKwTop10({ data, filteredData, convConfig }) {
+  const convType = convConfig?.convType ?? 'total'
+  const period   = convConfig?.period   ?? '14d'
+
+  // 상품 목록 (filteredData 기준)
+  const productOptions = useMemo(() => getUnique(filteredData, '광고집행 상품명'), [filteredData])
+  const [selectedProd, setSelectedProd] = useState(null)
+  const [prodOpen, setProdOpen]         = useState(false)
+
+  // 선택 상품 변경 시 초기화
+  useEffect(() => { setSelectedProd(null) }, [filteredData])
+
+  const salesKey = period === '1d' ? '매출_1일' : '매출_14일'
+  const roasKey  = period === '1d' ? 'ROAS_1일' : 'ROAS_14일'
+  const ordKey   = period === '1d' ? '주문수_1일' : '주문수_14일'
+
+  // 선택 상품의 키워드 집계
+  const top10 = useMemo(() => {
+    if (!selectedProd) return []
+    const rows = filteredData.filter(r => r['광고집행 상품명'] === selectedProd)
+    const kws  = groupByKeyword(rows, convType)
+    const totalRev = kws.reduce((s, k) => s + (k[salesKey] ?? 0), 0)
+    return kws
+      .filter(k => k[salesKey] > 0 || k[ordKey] > 0)
+      .sort((a, b) => (b[salesKey] ?? 0) - (a[salesKey] ?? 0))
+      .slice(0, 10)
+      .map(k => ({
+        ...k,
+        비중: totalRev > 0 ? (k[salesKey] / totalRev * 100) : 0,
+        CVR:  k.클릭수 > 0 ? (k[ordKey] / k.클릭수 * 100) : 0,
+      }))
+  }, [selectedProd, filteredData, convType, salesKey, ordKey])
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      {/* 헤더 */}
+      <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-800">구매전환 키워드 TOP 10</h3>
+          <p className="text-xs text-slate-400 mt-0.5">상품별 전환매출 기준 상위 키워드</p>
+        </div>
+        {/* 상품 선택 드롭다운 */}
+        <div className="relative">
+          <button
+            onClick={() => setProdOpen(o => !o)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${
+              selectedProd
+                ? 'bg-blue-600 border-blue-600 text-white'
+                : 'bg-white border-slate-200 text-slate-600 hover:border-blue-400'
+            }`}
+          >
+            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+            </svg>
+            <span className="max-w-[200px] truncate">{selectedProd ?? '상품 선택'}</span>
+            <svg className="w-3.5 h-3.5 shrink-0 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {prodOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setProdOpen(false)} />
+              <div className="absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 min-w-72 max-h-72 overflow-y-auto">
+                {selectedProd && (
+                  <button
+                    onClick={() => { setSelectedProd(null); setProdOpen(false) }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-slate-400 hover:bg-slate-50 border-b border-slate-100 flex items-center gap-2"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    선택 해제
+                  </button>
+                )}
+                {productOptions.map(opt => (
+                  <button
+                    key={opt}
+                    onClick={() => { setSelectedProd(opt); setProdOpen(false) }}
+                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                      selectedProd === opt
+                        ? 'bg-blue-50 text-blue-700 font-semibold'
+                        : 'text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="block truncate">{opt}</span>
+                  </button>
+                ))}
+                {!productOptions.length && (
+                  <p className="px-4 py-6 text-sm text-slate-400 text-center">상품 데이터 없음</p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* 안내 / 테이블 */}
+      {!selectedProd ? (
+        <div className="flex flex-col items-center justify-center py-12 gap-2 text-center">
+          <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 15.75l-2.489-2.489m0 0a3.375 3.375 0 10-4.773-4.773 3.375 3.375 0 004.774 4.774zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <p className="text-sm font-medium text-slate-500">상품을 선택하면 전환 키워드를 확인할 수 있습니다</p>
+          <p className="text-xs text-slate-400">우측 상단 드롭다운에서 분석할 상품을 선택하세요</p>
+        </div>
+      ) : top10.length === 0 ? (
+        <div className="px-5 py-10 text-center text-slate-400 text-sm">해당 상품의 전환 키워드 데이터 없음</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500">키워드</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500">전환매출</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500">비중</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500">전환수</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500">노출수</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500">클릭수</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500">CTR</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500">CPC</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500">ROAS</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500">CVR</th>
+              </tr>
+            </thead>
+            <tbody>
+              {top10.map((kw, i) => (
+                <tr key={i} className="border-b border-slate-100 hover:bg-slate-50/70 transition-colors">
+                  <td className="px-3 py-2.5 font-medium text-slate-800 max-w-[140px]">
+                    <span title={kw.키워드} className="block truncate">{kw.키워드}</span>
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-xs font-semibold text-slate-800">{fmtWon(kw[salesKey])}</td>
+                  <td className="px-3 py-2.5 text-right">
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                      {kw.비중.toFixed(1)}%
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-xs text-slate-600">{fmtNumber(kw[ordKey])}</td>
+                  <td className="px-3 py-2.5 text-right text-xs text-slate-600">{fmtNumber(kw.노출수)}</td>
+                  <td className="px-3 py-2.5 text-right text-xs text-slate-600">{fmtNumber(kw.클릭수)}</td>
+                  <td className="px-3 py-2.5 text-right text-xs text-slate-600">{fmtPercent(kw.CTR, 2)}</td>
+                  <td className="px-3 py-2.5 text-right text-xs text-slate-600">{fmtWon(kw.CPC)}</td>
+                  <td className="px-3 py-2.5 text-right">{ROAS_CHIP(kw[roasKey] ?? 0)}</td>
+                  <td className="px-3 py-2.5 text-right text-xs text-slate-600">{fmtPercent(kw.CVR, 2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── InsightsPage ─────────────────────────────────────────────────────────────
 
 const DIMS = [
@@ -1630,13 +1836,19 @@ const DIMS = [
   { id: 'placement', label: '지면별' },
 ]
 
-export default function InsightsPage({ data }) {
+export default function InsightsPage({ data, convConfig = { period: '14d', convType: 'total' } }) {
   const [dim, setDim]                           = useState('campaign')
   const [selectedCampaign, setSelectedCampaign] = useState('전체')
   const [isPending, startTransition]            = useTransition()
   const [showToast, setShowToast]               = useState(false)
-  const [kwConvWindow, setKwConvWindow]         = useState('14d')
+  // kwConvWindow 초기값 및 전역 기준 변경 시 동기화
+  const [kwConvWindow, setKwConvWindow]         = useState(convConfig.period)
   const toastTimer                              = useRef(null)
+
+  // 전역 기간 기준 변경 시 kwConvWindow 자동 동기화
+  useEffect(() => {
+    setKwConvWindow(convConfig.period)
+  }, [convConfig.period])
 
   const handleCopy = useCallback((text) => {
     navigator.clipboard.writeText(text).catch(() => {})
@@ -1667,15 +1879,15 @@ export default function InsightsPage({ data }) {
     return cache.current.results[name]
   }
 
-  const campaigns = useMemo(() => groupByCampaign(filteredData), [filteredData])
-  const insights  = useMemo(() => generateInsights(filteredData), [filteredData])
+  const campaigns = useMemo(() => groupByCampaign(filteredData, convConfig.convType), [filteredData, convConfig.convType])
+  const insights  = useMemo(() => generateInsights(filteredData, convConfig.convType), [filteredData, convConfig.convType])
 
   const handleDimChange      = (id) => startTransition(() => setDim(id))
   const handleCampaignChange = (c)  => startTransition(() => setSelectedCampaign(c))
 
   const getDimRows = () => {
     if (dim === 'campaign')  return campaigns
-    if (dim === 'keyword')   return getCached('keyword',   groupByKeyword)
+    if (dim === 'keyword')   return getCached('keyword',   d => groupByKeyword(d, convConfig.convType))
     if (dim === 'placement') return getCached('placement', groupByPlacement)
     return []
   }
@@ -1750,7 +1962,7 @@ export default function InsightsPage({ data }) {
           {/* 상품별: 정규화 분석 + 백엔드 API 기반 상세 */}
           {dim === 'product' && (
             <div className="space-y-4">
-              <NormalizedProductSection data={filteredData} onCopy={handleCopy} />
+              <NormalizedProductSection data={filteredData} onCopy={handleCopy} convConfig={convConfig} />
               <ProductTab selectedCampaign={selectedCampaign} onCopy={handleCopy} />
             </div>
           )}
@@ -1812,6 +2024,13 @@ export default function InsightsPage({ data }) {
         </>
       )}
 
+      {/* 구매전환 키워드 TOP 10 */}
+      <ProductKwTop10
+        data={data}
+        filteredData={filteredData}
+        convConfig={convConfig}
+      />
+
       {/* 이상 징후 카드 */}
       <div className="space-y-3">
         <div className="flex items-center gap-2">
@@ -1826,7 +2045,7 @@ export default function InsightsPage({ data }) {
       </div>
 
       {/* AI 플레이북 */}
-      <PlaybookPanel filteredData={filteredData} campaignLabel={selectedCampaign} allData={data} />
+      <PlaybookPanel filteredData={filteredData} campaignLabel={selectedCampaign} allData={data} convConfig={convConfig} />
 
       <CopyToast visible={showToast} />
     </div>
